@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>内容生产流水线 v3</title>
+<style>
+:root {
+  --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+  --border: #2e3347; --text: #e8eaf0; --muted: #8b90a0;
+  --accent: #5b6af0; --accent2: #7c8ff7; --green: #3ecf8e;
+  --yellow: #f5a623; --red: #e55353; --radius: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100vh; }
+a { color: var(--accent2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Layout */
+header { background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 24px; display: flex; align-items: center; gap: 16px; height: 56px; }
+.logo { font-size: 17px; font-weight: 700; color: var(--accent2); white-space: nowrap; }
+.storage-bar { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.storage-bar .bar { width: 80px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.storage-bar .bar-fill { height: 100%; background: var(--green); border-radius: 3px; transition: .3s; }
+.status-dots { display: flex; gap: 8px; }
+.status-dot { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted);
+  background: var(--surface2); padding: 3px 8px; border-radius: 12px; }
+.status-dot .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+.status-dot.up .dot { background: var(--green); }
+.status-dot.slow .dot { background: var(--yellow); }
+
+nav { background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; padding: 0 24px; gap: 0; }
+.nav-link { padding: 12px 18px; font-size: 13px; color: var(--muted); cursor: pointer;
+  border-bottom: 2px solid transparent; transition: .15s; white-space: nowrap; display: block; text-decoration: none; }
+.nav-link.active { color: var(--accent2); border-color: var(--accent); }
+.nav-link .badge { background: var(--accent); color: #fff; font-size: 10px;
+  padding: 1px 5px; border-radius: 8px; margin-left: 4px; }
+
+main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* Cards */
+.card { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.card-header h2 { font-size: 15px; font-weight: 600; }
+.card-header h3 { font-size: 14px; font-weight: 600; }
+
+/* Dashboard */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.stat-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; text-align: center; }
+.stat-num { font-size: 28px; font-weight: 700; }
+.stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.stat-green { color: var(--green); }
+.stat-yellow { color: var(--yellow); }
+.stat-red { color: var(--red); }
+.stat-blue { color: var(--accent2); }
+
+.platform-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 12px; margin-bottom: 20px; }
+
+/* Tables */
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border);
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.tbl td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+.tbl tr:hover td { background: var(--surface2); }
+.tbl a { color: var(--text); text-decoration: none; }
+.tbl a:hover { color: var(--accent2); }
+
+/* Chips / Tags */
+.chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
+  background: var(--border); color: var(--muted); white-space: nowrap; }
+.chip-blue { background: rgba(91,106,240,.15); color: var(--accent2); }
+.chip-green { background: rgba(62,207,142,.15); color: var(--green); }
+.chip-red { background: rgba(229,83,83,.15); color: var(--red); }
+.chip-yellow { background: rgba(245,166,35,.15); color: var(--yellow); }
+
+/* Buttons */
+.btn { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer;
+  font-size: 12px; font-weight: 500; transition: .15s; display: inline-flex; align-items: center; gap: 4px; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent2); }
+.btn-outline { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.btn-outline:hover { color: var(--text); border-color: var(--muted); }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+
+/* Forms */
+input, select, textarea { background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 12px; color: var(--text); font-size: 13px; outline: none; width: 100%; }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+.filter-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.filter-bar select, .filter-bar input { width: auto; min-width: 120px; }
+
+/* Article Detail */
+.timeline { display: flex; align-items: center; gap: 0; margin: 16px 0 24px; overflow-x: auto; }
+.tl-step { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 0 0 auto;
+  padding: 0 8px; position: relative; min-width: 70px; }
+.tl-step::after { content: ''; position: absolute; top: 13px; left: 50%; width: 100%; height: 2px;
+  background: var(--border); z-index: 0; }
+.tl-step:last-child::after { display: none; }
+.tl-dot { width: 26px; height: 26px; border-radius: 50%; background: var(--border);
+  z-index: 1; display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--muted); border: 2px solid var(--border); flex-shrink: 0; }
+.tl-step.done .tl-dot { background: var(--green); border-color: var(--green); color: #0f1117; }
+.tl-step.active .tl-dot { background: var(--accent); border-color: var(--accent2); color: #fff;
+  box-shadow: 0 0 8px rgba(91,106,240,.5); }
+.tl-step.failed .tl-dot { background: var(--red); border-color: var(--red); color: #fff; }
+.tl-step.done::after { background: var(--green); }
+.tl-label { font-size: 10px; color: var(--muted); white-space: nowrap; }
+
+.score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap: 12px; margin: 12px 0; }
+.score-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 14px; }
+.score-platform { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.score-val { font-size: 32px; font-weight: 700; }
+.score-reason { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+
+.pub-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  background: var(--surface2); border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
+.pub-success { color: var(--green); }
+.pub-fail { color: var(--red); }
+
+/* Agent Management */
+.agent-card { background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; margin-bottom: 8px; overflow: hidden; }
+.agent-header { padding: 12px 16px; cursor: pointer; display: flex;
+  align-items: center; gap: 12px; user-select: none; }
+.agent-header:hover { background: rgba(255,255,255,.03); }
+.agent-name { font-size: 14px; font-weight: 600; min-width: 80px; }
+.agent-role { font-size: 12px; color: var(--muted); flex: 1; }
+.agent-body { padding: 0 16px 16px; display: none; }
+.agent-body.open { display: block; }
+.agent-prompt { width: 100%; min-height: 80px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 12px;
+  color: var(--text); font-family: 'SF Mono','Fira Code','Courier New',monospace;
+  font-size: 12px; line-height: 1.6; resize: vertical; outline: none; }
+.agent-prompt:focus { border-color: var(--accent); }
+.cluster-title { font-size: 15px; font-weight: 600; margin: 12px 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+
+/* Services */
+.svc-grid { display: flex; flex-direction: column; gap: 10px; }
+.svc-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+  background: var(--surface2); border-radius: 6px; border: 1px solid var(--border); }
+.svc-name { font-size: 14px; font-weight: 600; min-width: 140px; }
+.svc-status { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 10px; }
+.svc-up { background: rgba(62,207,142,.15); color: var(--green); }
+.svc-down { background: rgba(229,83,83,.15); color: var(--red); }
+.svc-slow { background: rgba(245,166,35,.15); color: var(--yellow); }
+.svc-info { font-size: 11px; color: var(--muted); min-width: 60px; }
+.svc-error { font-size: 11px; color: var(--red); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Toast */
+.toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 2000;
+  display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 10px 16px; border-radius: 6px; font-size: 13px;
+  background: var(--surface2); border: 1px solid var(--border); animation: slideIn .25s ease; max-width: 300px; }
+.toast.success { border-color: var(--green); color: var(--green); }
+.toast.error { border-color: var(--red); color: var(--red); }
+@keyframes slideIn { from { transform: translateX(20px); opacity:0; } }
+
+/* Modal */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 1900;
+  display: none; align-items: center; justify-content: center; }
+.modal-backdrop.show { display: flex; }
+.modal-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 22px 26px; min-width: 360px; max-width: 520px; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+.modal-card h3 { margin: 0 0 14px; font-size: 16px; }
+.modal-card .form-row { margin-bottom: 12px; }
+.modal-card .form-row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+.empty { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
+.spinner { display: inline-block; width: 14px; height: 14px;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media(max-width:800px) {
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+  .tl-step { min-width: 50px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">内容生产流水线</div>
+  <div class="status-dots" id="statusDots">
+    <div class="status-dot" id="sd-orchestrator"><span class="dot"></span>编排器</div>
+    <div class="status-dot" id="sd-distilled"><span class="dot"></span>蒸馏</div>
+    <div class="status-dot" id="sd-select"><span class="dot"></span>选题</div>
+    <div class="status-dot" id="sd-writing"><span class="dot"></span>写作</div>
+    <div class="status-dot" id="sd-scorer"><span class="dot"></span>评分</div>
+    <div class="status-dot" id="sd-autopub"><span class="dot"></span>发布</div>
+  </div>
+  <div class="storage-bar">
+    <span id="collectIndicator" style="font-size:11px;color:var(--muted);margin-right:12px"></span>
+    <span>存储</span>
+    <div class="bar"><div class="bar-fill" id="storageBar" style="width:12%"></div></div>
+    <span id="storageText">0.3G / 2.5G</span>
+  </div>
+</header>
+
+<nav>
+  <a class="nav-link active" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</a>
+  <a class="nav-link" data-page="topics" onclick="showPage('topics')">选题列表</a>
+  <a class="nav-link" data-page="articles" onclick="showPage('articles')">文章列表</a>
+  <a class="nav-link" data-page="services" onclick="showPage('services')">服务健康</a>
+  <a class="nav-link" data-page="accounts" onclick="showPage('accounts')">账号管理</a>
+  <a class="nav-link" data-page="characters" onclick="showPage('characters')">人物蒸馏</a>
+  <a class="nav-link" data-page="agents" onclick="showPage('agents')">Agent 管理</a>
+</nav>
+
+<main>
+  <!-- Dashboard -->
+  <div class="page active" id="page-dashboard">
+    <div class="stat-grid" id="statGrid"></div>
+    <div class="card">
+      <div class="card-header"><h2>今日发布进度</h2></div>
+      <div class="platform-cards" id="platformCards"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>快捷操作</h2></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="showNewTopicForm()">手动提选题</button>
+        <button class="btn btn-primary" onclick="collectAndSync()" title="触发 select_topic 采集热点并同步到流水线">采集选题</button>
+        <button class="btn btn-outline" onclick="syncOnly()" title="仅从 select_topic 同步已有高分选题">同步选题</button>
+        <button class="btn btn-outline" onclick="tickNow()">推进一步</button>
+        <button class="btn btn-outline" onclick="showPage('topics')">查看选题</button>
+        <button class="btn btn-outline" onclick="showPage('articles')">查看文章</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Topics list -->
+  <div class="page" id="page-topics">
+    <div class="card">
+      <div class="card-header">
+        <h2>选题列表</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="showNewTopicForm()">+ 新选题</button>
+          <button class="btn btn-outline btn-sm" onclick="loadTopics()">↻ 刷新</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <select id="topicStatusFilter" onchange="loadTopics()"><option value="">全部状态</option>
+          <option value="collected">collected</option><option value="duplicated">duplicated</option>
+          <option value="matched">matched</option>
+        </select>
+        <select id="topicSourceFilter" onchange="loadTopics()"><option value="">全部来源</option>
+          <option value="user">用户提交</option><option value="auto">自动抓取</option>
+        </select>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>标题</th><th>来源</th><th>状态</th><th>时间</th></tr></thead>
+        <tbody id="topicTableBody"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Articles list -->
+  <div class="page" id="page-articles">
+    <div class="card">
+      <div class="card-header">
+        <h2>文章列表</h2>
+        <button class="btn btn-outline btn-sm" onclick="loadArticles()">↻ 刷新</button>
+      </div>
+      <div class="filter-bar">
+        <select id="artStatusFilter" onchange="loadArticles()"><option value="">全部状态</option>
+          <option value="matched">matched</option><option value="writing">writing</option>
+          <option value="drafted">drafted</option><option value="scored">scored</option>
+          <option value="reviewing">reviewing</option><option value="publishing">publishing</option>
+          <option value="published">published</option><option value="failed">failed</option><option value="rejected">rejected</option>
+        </select>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>选题</th><th>状态</th><th>错误</th><th>时间</th></tr></thead>
+        <tbody id="artTableBody"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Article detail -->
+  <div class="page" id="page-article-detail">
+    <div id="detailContent"></div>
+  </div>
+
+  <!-- Services health -->
+  <div class="page" id="page-services">
+    <div class="card">
+      <div class="card-header"><h2>模块健康状态</h2><button class="btn btn-outline btn-sm" onclick="loadServices()">↻ 刷新</button></div>
+      <div class="svc-grid" id="svcGrid"><div class="empty">加载中…</div></div>
+    </div>
+  </div>
+
+  <!-- Characters distillation (embedded distilled_characters UI on :8767) -->
+  <div class="page" id="page-characters">
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="card-header" style="padding:14px 20px;border-bottom:1px solid var(--border);">
+        <h2>人物蒸馏 · 蒸笼阁</h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="charSvcStatus" style="font-size:11px;color:var(--muted);">检测中…</span>
+          <a class="btn btn-outline btn-sm" href="http://127.0.0.1:8767" target="_blank" rel="noopener">在新窗口打开 ↗</a>
+          <button class="btn btn-outline btn-sm" onclick="reloadCharactersFrame()">↻ 刷新</button>
+        </div>
+      </div>
+      <div id="charactersFrameWrap" style="height:calc(100vh - 220px);min-height:600px;background:var(--surface2);">
+        <iframe id="charactersFrame"
+                src="http://127.0.0.1:8767/"
+                style="width:100%;height:100%;border:0;display:block;"
+                title="人物思维蒸馏工坊"></iframe>
+      </div>
+      <div id="charactersOffline" class="empty" style="display:none;padding:40px 20px;text-align:center;">
+        <div style="font-size:14px;color:var(--red);margin-bottom:8px;">人物蒸馏服务未启动</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+          启动命令：<code style="font-size:11px;background:var(--surface2);padding:2px 6px;border-radius:4px;">cd distilled_characters &amp;&amp; python3 main.py --port 8767</code>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadCharactersPage()">重新检测</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Accounts management -->
+  <div class="page" id="page-accounts">
+    <div class="card">
+      <div class="card-header">
+        <h2>账号管理</h2>
+        <button class="btn btn-outline btn-sm" onclick="loadAccountsPage()">↻ 刷新</button>
+      </div>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:16px">
+        所有秘密本地写盘。Cookie / 微信 API 信息保存到
+        <code style="font-size:11px">Autopublish/.data/accounts.json</code>；模型 API Key 保存到项目根
+        <code style="font-size:11px">.env</code>。
+      </p>
+      <div id="accountsContent"><div class="empty">加载中…</div></div>
+    </div>
+  </div>
+
+  <!-- Agent management -->
+  <div class="page" id="page-agents">
+    <div class="card">
+      <div class="card-header">
+        <h2>写作子 Agent 管理</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="agentSvcStatus" style="font-size:11px;color:var(--muted);"></span>
+          <button class="btn btn-outline btn-sm" onclick="loadAgentsPage()">↻ 刷新</button>
+        </div>
+      </div>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:16px">
+        查看和编辑写作模块中 14 个子 Agent 的 system prompt。
+        编辑后点击"保存"即持久化到
+        <code style="font-size:11px">writing/config/agent-overrides.json</code>。
+      </p>
+      <div id="agentClusters"></div>
+    </div>
+  </div>
+</main>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<div class="modal-backdrop" id="newTopicModal" onclick="if(event.target===this) closeNewTopicModal()">
+  <div class="modal-card">
+    <h3>新增选题</h3>
+    <div class="form-row">
+      <label for="newTopicTitle">选题标题 *</label>
+      <input id="newTopicTitle" type="text" placeholder="例：国产大模型最新动态" autocomplete="off" />
+    </div>
+    <div class="form-row">
+      <label for="newTopicBrief">选题简述（可留空）</label>
+      <textarea id="newTopicBrief" rows="4" placeholder="围绕主题、要论证的观点、可参考材料……"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeNewTopicModal()">取消</button>
+      <button class="btn btn-primary" onclick="submitNewTopicForm()">提交</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+const STATES = ['collected','matched','writing','drafted','scored','reviewing','publishing','published'];
+const STATE_LABELS = {
+  collected:'已采集', duplicated:'已去重', matched:'已匹配', writing:'写作中',
+  drafted:'已生成', scored:'已评分', reviewing:'待审', publishing:'发布中',
+  published:'已发布', failed:'失败', rejected:'已驳回',
+};
+const STATE_CLASS = {
+  collected:'', matched:'chip-blue', writing:'chip-blue', drafted:'chip-blue',
+  scored:'chip-yellow', reviewing:'chip-yellow', publishing:'chip-blue',
+  published:'chip-green', failed:'chip-red', rejected:'',
+};
+
+// ── Routing ────────────────────────────────────────────────
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+  const page = document.getElementById('page-' + name);
+  if (page) page.classList.add('active');
+  const nav = document.querySelector(`[data-page="${name}"]`);
+  if (nav) nav.classList.add('active');
+  if (name === 'dashboard') loadDashboard();
+  else if (name === 'topics') loadTopics();
+  else if (name === 'articles') loadArticles();
+  else if (name === 'services') loadServices();
+  else if (name === 'accounts') loadAccountsPage();
+  else if (name === 'characters') loadCharactersPage();
+  else if (name === 'agents') loadAgentsPage();
+  window.location.hash = name === 'dashboard' ? '' : name;
+}
+
+window.addEventListener('hashchange', () => {
+  const name = window.location.hash.replace('#','') || 'dashboard';
+  showPage(name);
+});
+
+// ── Dashboard ──────────────────────────────────────────────
+
+async function loadDashboard() {
+  try {
+    const r = await fetch(API + '/api/dashboard');
+    const d = await r.json();
+    const stats = d;
+    const failed = stats.failed || 0;
+    const reviewing = stats.pending_review || 0;
+    const published = stats.today_published || 0;
+    const total = Object.values(stats.by_status || {}).reduce((a,b) => a+b, 0);
+
+    document.getElementById('statGrid').innerHTML = `
+      <div class="stat-card"><div class="stat-num stat-blue">${total}</div><div class="stat-label">文章总数</div></div>
+      <div class="stat-card"><div class="stat-num stat-green">${published}</div><div class="stat-label">今日已发布</div></div>
+      <div class="stat-card"><div class="stat-num stat-yellow">${reviewing}</div><div class="stat-label">待审</div></div>
+      <div class="stat-card"><div class="stat-num stat-red">${failed}</div><div class="stat-label">失败</div></div>
+    `;
+
+    const pc = stats.platform_counts || {};
+    document.getElementById('platformCards').innerHTML = ['wechat','xiaohongshu','toutiao'].map(p => {
+      const cnt = pc[p] || 0;
+      const labels = {wechat:'公众号',xiaohongshu:'小红书',toutiao:'头条'};
+      const goal = 1; // each platform ≥1 per day
+      return `<div class="card" style="text-align:center">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:8px">${labels[p]}</div>
+        <div style="font-size:32px;font-weight:700;color:${cnt>=goal?'var(--green)':'var(--yellow)'}">${cnt}/${goal}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">${cnt>=goal?'已达标':'未达标'}</div>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+}
+
+// ── Topics ─────────────────────────────────────────────────
+
+async function loadTopics() {
+  const status = document.getElementById('topicStatusFilter')?.value || '';
+  const source = document.getElementById('topicSourceFilter')?.value || '';
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (source) params.set('source', source);
+  params.set('limit', '100');
+
+  try {
+    const r = await fetch(API + '/api/topics?' + params);
+    const d = await r.json();
+    const topics = d.topics || [];
+    const tbody = document.getElementById('topicTableBody');
+    if (!topics.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无选题</td></tr>';
+      return;
+    }
+    tbody.innerHTML = topics.map(t => `
+      <tr>
+        <td><a href="javascript:showTopicDetail('${t.id}')">${esc(t.title)}</a></td>
+        <td><span class="chip ${t.source==='user'?'chip-blue':''}">${t.source}</span></td>
+        <td><span class="chip ${STATE_CLASS[t.status]||''}">${STATE_LABELS[t.status]||t.status}</span></td>
+        <td style="font-size:11px;color:var(--muted)">${fmtTime(t.created_at)}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    document.getElementById('topicTableBody').innerHTML = `<tr><td colspan="4" class="empty">加载失败: ${e.message}</td></tr>`;
+  }
+}
+
+async function showTopicDetail(tid) {
+  try {
+    const r = await fetch(API + '/api/topics/' + tid);
+    const t = await r.json();
+    const article = t.article;
+    const content = `
+      <div class="card">
+        <div class="card-header"><h2>${esc(t.title)}</h2><a href="javascript:showPage('topics')" style="font-size:12px">← 返回列表</a></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;margin-bottom:10px">
+          <div><span style="color:var(--muted)">状态:</span> <span class="chip ${STATE_CLASS[t.status]||''}">${STATE_LABELS[t.status]||t.status}</span></div>
+          <div><span style="color:var(--muted)">来源:</span> ${t.source}</div>
+          <div><span style="color:var(--muted)">创建时间:</span> ${fmtTime(t.created_at)}</div>
+          <div><span style="color:var(--muted)">用户提交:</span> ${t.user_submitted?'是':'否'}</div>
+        </div>
+        ${t.brief ? `<div style="font-size:13px;color:var(--muted);margin-top:8px">${esc(t.brief)}</div>` : ''}
+        ${t.source_url ? `<div style="font-size:12px;margin-top:4px"><a href="${esc(t.source_url)}" target="_blank">原文链接 →</a></div>` : ''}
+        ${article ? `<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:6px;font-size:13px">
+          <strong>关联文章:</strong> <span class="chip ${STATE_CLASS[article.status]||''}">${STATE_LABELS[article.status]||article.status}</span>
+          <a href="javascript:showArticleDetail('${article.id}')" style="margin-left:8px">查看 →</a>
+        </div>` : ''}
+        ${t.dup_of_topic_id ? `<div style="margin-top:8px;color:var(--yellow);font-size:13px">⚠ 与选题 ${esc(t.dup_of_topic_id)} 重复</div>` : ''}
+      </div>
+    `;
+    showPage('article-detail');
+    document.getElementById('detailContent').innerHTML = content;
+  } catch(e) {
+    toast('加载选题详情失败: ' + e.message, 'error');
+  }
+}
+
+function showNewTopicForm() {
+  const m = document.getElementById('newTopicModal');
+  document.getElementById('newTopicTitle').value = '';
+  document.getElementById('newTopicBrief').value = '';
+  m.classList.add('show');
+  setTimeout(() => document.getElementById('newTopicTitle').focus(), 50);
+}
+function closeNewTopicModal() {
+  document.getElementById('newTopicModal').classList.remove('show');
+}
+function submitNewTopicForm() {
+  const title = document.getElementById('newTopicTitle').value.trim();
+  const brief = document.getElementById('newTopicBrief').value.trim();
+  if (!title) { toast('请填写选题标题', 'error'); return; }
+  closeNewTopicModal();
+  submitTopic(title, brief);
+}
+
+async function submitTopic(title, brief) {
+  try {
+    const r = await fetch(API + '/api/topics', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({title, brief}),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      toast('选题已创建', 'success');
+      showPage('articles');
+      loadArticles();
+    } else {
+      toast('创建失败: ' + (d.detail || '未知错误'), 'error');
+    }
+  } catch(e) { toast('请求失败: ' + e.message, 'error'); }
+}
+
+// ── Articles ───────────────────────────────────────────────
+
+async function loadArticles() {
+  const status = document.getElementById('artStatusFilter')?.value || '';
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  params.set('limit', '100');
+
+  try {
+    const r = await fetch(API + '/api/articles?' + params);
+    const d = await r.json();
+    const articles = d.articles || [];
+    const tbody = document.getElementById('artTableBody');
+    if (!articles.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无文章</td></tr>';
+      return;
+    }
+    tbody.innerHTML = articles.map(a => {
+      const errCls = a.status === 'writing' ? 'chip-yellow' : 'chip-red';
+      return `<tr>
+        <td><a href="javascript:showArticleDetail('${a.id}')">${esc(a.topic_title || a.id)}</a></td>
+        <td><span class="chip ${STATE_CLASS[a.status]||''}">${STATE_LABELS[a.status]||a.status}</span></td>
+        <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.last_error_message ? `<span class="chip ${errCls}">${esc(a.last_error_message.slice(0,50))}</span>` : '-'}</td>
+        <td style="font-size:11px;color:var(--muted)">${fmtTime(a.created_at)}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('artTableBody').innerHTML = `<tr><td colspan="4" class="empty">加载失败: ${e.message}</td></tr>`;
+  }
+}
+
+async function showArticleDetail(aid) {
+  try {
+    const r = await fetch(API + '/api/articles/' + aid);
+    const d = await r.json();
+    const art = d.article, topic = d.topic, scores = d.scores || [], pubs = d.publishes || [];
+
+    // Timeline
+    const curIdx = STATES.indexOf(art.status);
+    const isFailed = art.status === 'failed';
+    const isRejected = art.status === 'rejected';
+    const timelineHtml = `<div class="timeline">${STATES.map((s,i) => {
+      let cls = '';
+      if (isFailed && i <= curIdx) cls = i === curIdx ? 'failed' : 'done';
+      else if (isRejected && i <= 3) cls = 'done';
+      else if (i < curIdx) cls = 'done';
+      else if (i === curIdx) cls = 'active';
+      const icon = cls==='done'?'✓':(cls==='failed'?'✗':'');
+      return `<div class="tl-step ${cls}"><div class="tl-dot">${icon||(i+1)}</div><div class="tl-label">${STATE_LABELS[s]}</div></div>`;
+    }).join('')}</div>`;
+
+    // Writing progress section (only for 'writing' status)
+    let writingHtml = '';
+    if (art.status === 'writing' && art.writing_task_id) {
+      writingHtml = `<div id="writingProgressCard" style="margin-top:16px">
+        <div class="card">
+          <div class="card-header"><h3>写作 Agent 内部进度</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-outline btn-sm" onclick="loadWritingProgress('${aid}')">↻ 刷新</button>
+              <a class="btn btn-primary btn-sm" href="http://127.0.0.1:8788" target="_blank">打开写作模块 →</a>
+            </div>
+          </div>
+          <div style="font-size:13px;color:var(--muted)" id="writingProgressBody">加载中...</div>
+        </div>
+      </div>`;
+    }
+
+    // Scores
+    const scoreHtml = scores.length ? `<div class="card-header" style="margin-top:20px"><h3>平台评分</h3></div>
+      <div class="score-grid">${scores.map(s => `
+        <div class="score-card">
+          <div class="score-platform">${platformLabel(s.platform)}</div>
+          <div class="score-val" style="color:${s.score>=70?'var(--green)':s.score>=50?'var(--yellow)':'var(--red)'}">${s.score}</div>
+          <div class="score-reason">${esc(s.reason)}</div>
+        </div>
+      `).join('')}</div>` : '';
+
+    // Publishes
+    const pubHtml = pubs.length ? `<div class="card-header" style="margin-top:20px"><h3>发布记录</h3></div>
+      ${pubs.map(p => `<div class="pub-row">
+        <span style="min-width:60px">${platformLabel(p.platform)}</span>
+        <span class="${p.status==='success'?'pub-success':'pub-fail'}">${p.status}</span>
+        ${p.platform_url ? `<a href="${esc(p.platform_url)}" target="_blank" style="font-size:11px;margin-left:auto">查看 →</a>` : ''}
+        ${p.error_message ? `<span style="font-size:11px;color:var(--red)">${esc(p.error_message.slice(0,60))}</span>` : ''}
+      </div>`).join('')}` : '';
+
+    // Error info (show differently for writing vs failed)
+    let errHtml = '';
+    if (art.last_error_message) {
+      const isWritingErr = art.status === 'writing';
+      const bg = isWritingErr ? 'rgba(245,166,35,.08)' : 'rgba(229,83,83,.08)';
+      const color = isWritingErr ? 'var(--yellow)' : 'var(--red)';
+      const title = isWritingErr ? '当前状态' : '错误信息';
+      errHtml = `<div class="card-header" style="margin-top:20px"><h3 style="color:${color}">${title}</h3></div>
+        <div style="background:${bg};padding:10px;border-radius:6px;font-size:12px;color:${color};font-family:monospace">${esc(art.last_error_message)}</div>`;
+    }
+
+    const content = `
+      <div class="card">
+        <div class="card-header"><h2>${esc(topic?.title || art.id)}</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="chip ${STATE_CLASS[art.status]||''}">${STATE_LABELS[art.status]||art.status}</span>
+            <a href="javascript:showPage('articles')" style="font-size:12px">← 返回</a>
+          </div>
+        </div>
+        ${timelineHtml}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
+          <div><span style="color:var(--muted)">Trace ID:</span> <code style="font-size:10px">${art.trace_id||'-'}</code></div>
+          <div><span style="color:var(--muted)">创建时间:</span> ${fmtTime(art.created_at)}</div>
+          <div><span style="color:var(--muted)">更新时间:</span> ${fmtTime(art.updated_at)}</div>
+          <div><span style="color:var(--muted)">重试次数:</span> ${art.retry_count||0}</div>
+          ${art.writing_task_id ? `<div><span style="color:var(--muted)">Writing Task:</span> <code style="font-size:10px">${art.writing_task_id.slice(0,8)}...</code></div>` : ''}
+        </div>
+        ${writingHtml}
+        ${scoreHtml}
+        ${pubHtml}
+        ${errHtml}
+        ${art.review_deadline_at ? `<div style="font-size:12px;color:var(--muted);margin-top:8px">审稿截止: ${fmtTime(art.review_deadline_at)}</div>` : ''}
+      </div>
+    `;
+    showPage('article-detail');
+    document.getElementById('detailContent').innerHTML = content;
+
+    // Auto-load writing progress if article is in writing state
+    if (art.status === 'writing' && art.writing_task_id) {
+      setTimeout(() => loadWritingProgress(aid), 200);
+    }
+  } catch(e) {
+    toast('加载文章详情失败: ' + e.message, 'error');
+  }
+}
+
+async function writingAction(aid, action) {
+  const labels = {
+    'force-approve': { confirm: '确定要强制通过吗？将基于已生成产物跑一次运营终审并接受结果。', toast: '已触发强制通过，6 Agent 终审跑完后自动进入下一步' },
+    'reset': { confirm: '确定要退回重写吗？将清空所有轮次产物并从头开始。', toast: '已重置任务，写作流水线重新启动' },
+    'discard': { confirm: '确定要放弃此文章吗？将归档为 rejected，不可恢复。', toast: '已放弃，文章将进入 rejected 状态' },
+  };
+  const cfg = labels[action];
+  if (!cfg) return;
+  if (!confirm(cfg.confirm)) return;
+  try {
+    const r = await fetch(API + '/api/articles/' + aid + '/writing/' + action, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) {
+      toast('操作失败: ' + (d.detail || d.error || ('HTTP ' + r.status)), 'error');
+      return;
+    }
+    toast(cfg.toast, 'success');
+    setTimeout(() => loadWritingProgress(aid), 500);
+  } catch (e) {
+    toast('请求失败: ' + e.message, 'error');
+  }
+}
+
+async function loadWritingProgress(aid) {
+  const el = document.getElementById('writingProgressBody');
+  if (!el) return;
+  try {
+    const r = await fetch(API + '/api/articles/' + aid + '/writing-status');
+    const d = await r.json();
+    const task = d.writing_task;
+    if (!task) {
+      el.innerHTML = `<span style="color:var(--muted)">${d.message || '暂无写作任务数据'}</span>`;
+      return;
+    }
+
+    const agentNames = {
+      zhang_material:'张素材',zhao_position:'赵立意',li_article:'李文章',
+      qian_human:'钱人味',liu_style:'刘风格',editor_supervisor:'编辑主Agent',
+      writer_supervisor:'写手主Agent',wu_fact_check:'吴查查',sun_compliance:'孙风控',
+      zhou_challenge:'周挑刺',chen_layout:'陈排版',zhang_publish:'章上线',
+      yan_final:'严反馈',title_master:'标题大师',
+    };
+
+    const statusLabel = {
+      draft:'草稿',running:'运行中',needs_config:'缺少LLM配置',
+      needs_material:'核查素材中',approved:'已完成',needs_human:'等候确认',failed:'失败',
+    };
+
+    const outputs = task.outputs || [];
+    const scoreReports = task.score_reports || [];
+
+    let html = `<div style="display:grid;gap:10px">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <span class="chip ${task.status==='running'?'chip-yellow':task.status==='approved'?'chip-green':'chip-blue'}">${statusLabel[task.status]||task.status}</span>
+        <span style="font-size:12px;color:var(--muted)">第 ${task.current_round} 轮</span>
+        <span style="font-size:12px;color:var(--muted)">产物: ${outputs.length} 个</span>
+        ${task.error ? `<span class="chip chip-red">${esc(task.error.slice(0,60))}</span>` : ''}
+      </div>`;
+
+    if (task.status === 'needs_human') {
+      html += `<div style="display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:rgba(245,166,35,.08);border-left:3px solid var(--yellow);border-radius:4px">
+        <div style="font-size:12px;color:var(--yellow);width:100%;margin-bottom:4px">需要人工决策：评分未达准入线，但产物已生成。</div>
+        <button class="btn btn-primary btn-sm" onclick="writingAction('${aid}','force-approve')">✓ 强制通过</button>
+        <button class="btn btn-outline btn-sm" onclick="writingAction('${aid}','reset')">↻ 退回重写</button>
+        <button class="btn btn-outline btn-sm" onclick="writingAction('${aid}','discard')" style="color:var(--red);border-color:var(--red)">✗ 放弃归档</button>
+      </div>`;
+    }
+
+    // Agent outputs timeline
+    if (outputs.length > 0) {
+      html += `<div style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto">`;
+      for (const o of outputs.slice(-12)) {
+        const name = agentNames[o.agentId] || o.agentId || 'Agent';
+        const st = o.status || '?';
+        const chipCls = st==='completed'?'chip-green':st==='running'?'chip-yellow':st==='failed'?'chip-red':'';
+        html += `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 8px;background:var(--surface2);border-radius:4px">
+          <span style="min-width:60px;font-weight:600">${name}</span>
+          <span style="min-width:50px">${o.stage||''}</span>
+          <span class="chip ${chipCls}">${st}</span>
+          ${typeof o.maxScore==='number' ? `<span style="color:var(--muted);margin-left:auto">${o.normalizedScore??o.score??'-'}/${o.maxScore}</span>` : ''}
+          <span style="color:var(--muted);font-size:10px">${o.round ? (o.round + '.' + o.subRound) : ''}</span>
+        </div>`;
+      }
+      html += `</div>`;
+    } else {
+      html += `<div style="color:var(--muted);font-size:12px">尚无 Agent 产物输出，任务可能正在排队或初始化中...</div>`;
+    }
+
+    // Score reports
+    if (scoreReports.length > 0) {
+      html += `<div style="margin-top:8px"><strong style="font-size:12px">评分轮次:</strong>`;
+      for (const sr of scoreReports.slice(-3)) {
+        html += `<span style="font-size:11px;color:var(--muted);margin-left:8px">
+          第${sr.round}轮: ${sr.totalScore}/10 ${sr.passed?'✓通过':'✗未通过'}
+        </span>`;
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--red)">加载写作进度失败: ${esc(e.message)}</span>`;
+  }
+}
+
+// ── Services ───────────────────────────────────────────────
+
+async function loadServices() {
+  try {
+    const r = await fetch(API + '/api/admin/services');
+    const d = await r.json();
+    const svc = d.services || {};
+    document.getElementById('svcGrid').innerHTML = Object.entries(svc).map(([name,s]) => {
+      const cls = s.status==='Up'?'svc-up':s.status==='Down'?'svc-down':'svc-slow';
+      return `<div class="svc-row">
+        <div class="svc-name">${name}</div>
+        <span class="svc-status ${cls}">${s.status}</span>
+        <span class="svc-info">v${s.version} · ${fmtUptime(s.uptime_seconds)}</span>
+        ${s.last_error ? `<span class="svc-error">${esc(s.last_error)}</span>` : '<span class="svc-info">—</span>'}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('svcGrid').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+// ── Characters distillation (embedded UI) ──────────────────────
+
+const CHAR_SVC_URL = 'http://127.0.0.1:8767';
+
+async function loadCharactersPage() {
+  const status = document.getElementById('charSvcStatus');
+  const frameWrap = document.getElementById('charactersFrameWrap');
+  const offline = document.getElementById('charactersOffline');
+  if (status) status.textContent = '检测中…';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(CHAR_SVC_URL + '/health', { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (status) status.textContent = '● 在线 :8767';
+    if (status) status.style.color = 'var(--green)';
+    if (frameWrap) frameWrap.style.display = 'block';
+    if (offline) offline.style.display = 'none';
+    const frame = document.getElementById('charactersFrame');
+    if (frame && !frame.src) frame.src = CHAR_SVC_URL + '/';
+  } catch (e) {
+    if (status) { status.textContent = '● 离线'; status.style.color = 'var(--red)'; }
+    if (frameWrap) frameWrap.style.display = 'none';
+    if (offline) offline.style.display = 'block';
+  }
+}
+
+function reloadCharactersFrame() {
+  const frame = document.getElementById('charactersFrame');
+  if (frame) frame.src = frame.src;
+}
+
+async function loadServiceDots() {
+  try {
+    const r = await fetch(API + '/api/admin/services');
+    const d = await r.json();
+    const svc = d.services || {};
+    for (const [name, s] of Object.entries(svc)) {
+      const el = document.getElementById('sd-' + name);
+      if (!el) continue;
+      el.className = 'status-dot ' + (s.status === 'Up' ? 'up' : s.status === 'Slow' ? 'slow' : '');
+    }
+    // Storage estimate (mock for now — M8 adds real value)
+    const used = 0.3;
+    const pct = Math.min(100, (used / 2.5) * 100);
+    document.getElementById('storageBar').style.width = pct + '%';
+    document.getElementById('storageText').textContent = used.toFixed(1) + 'G / 2.5G';
+  } catch(e) {}
+}
+
+// ── Accounts management ────────────────────────────────────
+
+const PLATFORM_META = {
+  wechat_official: {
+    label: '微信公众号', mode: 'api', placeholder: 'AppID=wx...\nAppSecret=...',
+    hint: '需要在 公众号 → 设置与开发 → 基本配置 中拿到 AppID / AppSecret。两行格式：第一行 AppID=xxx，第二行 AppSecret=xxx。',
+    rows: 3,
+  },
+  toutiao: {
+    label: '今日头条', mode: 'cookie', placeholder: '粘贴 Cookie JSON 数组（DevTools 导出）或 key=val; key=val 形式',
+    hint: '登录 mp.toutiao.com → F12 → Application → Cookies → 全选复制成 JSON 数组粘贴。',
+    rows: 6,
+  },
+  xiaohongshu: {
+    label: '小红书', mode: 'cookie', placeholder: '粘贴 Cookie JSON 数组或 key=val 字符串',
+    hint: '登录 creator.xiaohongshu.com 后导出 Cookie，同头条格式。',
+    rows: 6,
+  },
+};
+
+async function loadAccountsPage() {
+  const el = document.getElementById('accountsContent');
+  el.innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    const [accR, credR] = await Promise.all([
+      fetch(API + '/api/accounts'),
+      fetch(API + '/api/credentials'),
+    ]);
+    const accounts = await accR.json();
+    const creds = await credR.json();
+    el.innerHTML = renderAccountsPage(accounts, creds);
+  } catch(e) {
+    el.innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+function renderAccountsPage(accounts, creds) {
+  const platformCards = Object.entries(PLATFORM_META).map(([key, meta]) => {
+    const acc = accounts[key] || {cookie:'', account_name:'', logged_in:false, mode: meta.mode};
+    const present = !!(acc.cookie || '').trim();
+    const cookieLabel = key === 'wechat_official' ? 'AppID / AppSecret' : 'Cookie';
+    return `<div class="card" style="background:var(--surface2)">
+      <div class="card-header">
+        <h3>${meta.label}
+          <span class="chip ${present?'chip-green':'chip-red'}" style="margin-left:8px">${present?'已配置':'未配置'}</span>
+        </h3>
+        <button class="btn btn-outline btn-sm" onclick="deleteAccount('${key}')">清空</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${esc(meta.hint)}</div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;color:var(--muted)">账号备注名（可选）</label>
+        <input id="acc-name-${key}" type="text" value="${esc(acc.account_name||'')}" placeholder="例如：主号 / 工作号" />
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;color:var(--muted)">${cookieLabel}</label>
+        <textarea id="acc-cookie-${key}" rows="${meta.rows}" placeholder="${esc(meta.placeholder)}" style="font-family:ui-monospace,SF Mono,Consolas,monospace;font-size:12px;resize:vertical">${esc(acc.cookie||'')}</textarea>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveAccount('${key}')">保存</button>
+        <button class="btn btn-outline btn-sm" onclick="verifyAccount('${key}')">校验</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  const credCards = (creds.items || []).map(item => `
+    <div class="card" style="background:var(--surface2)">
+      <div class="card-header">
+        <h3>${esc(item.label)}
+          <span class="chip ${item.configured?'chip-green':'chip-red'}" style="margin-left:8px">${item.configured?'已配置':'未配置'}</span>
+        </h3>
+        ${item.configured ? `<span style="font-size:11px;color:var(--muted);font-family:ui-monospace,monospace">${esc(item.masked)}</span>` : ''}
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;color:var(--muted)">${esc(item.key)}</label>
+        <input id="cred-${item.key}" type="password" placeholder="${item.configured?'留空保持现值；填值会覆盖':'sk-...'}" autocomplete="new-password" />
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveCredential('${item.key}')">保存</button>
+        ${item.configured ? `<button class="btn btn-outline btn-sm" onclick="clearCredential('${item.key}')">清除</button>` : ''}
+      </div>
+    </div>`).join('');
+
+  return `
+    <h3 style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px">发布平台账号</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px;margin-bottom:24px">${platformCards}</div>
+    <h3 style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px">模型 API Key (.env)</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px">${credCards}</div>
+  `;
+}
+
+async function saveAccount(platform) {
+  const cookie = document.getElementById('acc-cookie-' + platform).value.trim();
+  const name = document.getElementById('acc-name-' + platform).value.trim();
+  const meta = PLATFORM_META[platform];
+  const payload = {
+    platform,
+    account_name: name,
+    cookie,
+    mode: meta.mode,
+    logged_in: !!cookie,
+  };
+  try {
+    const r = await fetch(API + '/api/accounts', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) { const d = await r.json().catch(()=>({})); toast('保存失败: ' + (d.detail||d.error||r.status), 'error'); return; }
+    toast('已保存 ' + meta.label, 'success');
+    loadAccountsPage();
+  } catch(e) { toast('请求失败: ' + e.message, 'error'); }
+}
+
+async function deleteAccount(platform) {
+  if (!confirm('确定要清空 ' + PLATFORM_META[platform].label + ' 的凭据吗？')) return;
+  try {
+    const r = await fetch(API + '/api/accounts/' + platform, {method:'DELETE'});
+    if (!r.ok) { toast('清空失败', 'error'); return; }
+    toast('已清空', 'success');
+    loadAccountsPage();
+  } catch(e) { toast('请求失败: ' + e.message, 'error'); }
+}
+
+async function verifyAccount(platform) {
+  toast('校验中…', 'info');
+  try {
+    const r = await fetch(API + '/api/accounts/verify', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({platform}),
+    });
+    const d = await r.json();
+    if (d.ok || d.valid) toast('校验通过 ✓', 'success');
+    else toast('校验失败: ' + (d.message||d.error||'unknown'), 'error');
+  } catch(e) { toast('请求失败: ' + e.message, 'error'); }
+}
+
+async function saveCredential(key) {
+  const v = document.getElementById('cred-' + key).value.trim();
+  if (!v) { toast('请填值后再保存', 'error'); return; }
+  try {
+    const r = await fetch(API + '/api/credentials', {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({[key]: v}),
+    });
+    if (!r.ok) { const d = await r.json().catch(()=>({})); toast('保存失败: ' + (d.detail||r.status), 'error'); return; }
+    toast('已保存 ' + key, 'success');
+    loadAccountsPage();
+  } catch(e) { toast('请求失败: ' + e.message, 'error'); }
+}
+
+async function clearCredential(key) {
+  if (!confirm('确定要清除 ' + key + ' 吗？将从 .env 中删除该行。')) return;
+  try {
+    const r = await fetch(API + '/api/credentials', {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({[key]: ''}),
+    });
+    if (!r.ok) { toast('清除失败', 'error'); return; }
+    toast('已清除', 'success');
+    loadAccountsPage();
+  } catch(e) { toast('请求失败: ' + e.message, 'error'); }
+}
+
+// ── Tick ───────────────────────────────────────────────────
+
+async function tickNow() {
+  try {
+    const r = await fetch(API + '/api/tick', {method:'POST'});
+    const d = await r.json();
+    if (d.ok) {
+      toast(`推进了 ${d.advanced} 篇文章`, 'success');
+      loadDashboard();
+      loadArticles();
+    }
+  } catch(e) { toast('推进失败: ' + e.message, 'error'); }
+}
+
+// ── Collect & Sync ──────────────────────────────────────────
+
+async function collectAndSync() {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '采集中...'; }
+
+  // Check if select_topic is reachable first
+  try {
+    await fetch(API + '/api/admin/services');
+  } catch(e) {
+    toast('编排器服务不可用', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '采集选题'; }
+    return;
+  }
+
+  try {
+    const r1 = await fetch(API + '/api/collect/trigger', {method:'POST'});
+    const d1 = await r1.json();
+
+    if (!d1.ok) {
+      const msg = d1.detail || '';
+      if (msg.includes('connect') || msg.includes('Connection') || msg.includes('refused')) {
+        toast('采集失败: select_topic 服务未启动，请先启动选题模块', 'error');
+      } else {
+        toast('采集触发失败: ' + msg, 'error');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = '采集选题'; }
+      return;
+    }
+
+    const collResult = d1.collect_result || d1;
+    const collStatus = collResult.status;
+    if (collStatus === 'already_running') {
+      toast('采集任务正在进行中，稍后会自动完成', '');
+      if (btn) { btn.disabled = false; btn.textContent = '采集选题'; }
+      return;
+    }
+    if (collStatus !== 'completed') {
+      toast('采集未完成: ' + (collResult.error || collStatus || 'unknown'), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '采集选题'; }
+      return;
+    }
+
+    toast('采集完成，正在同步选题...', '');
+  } catch(e) {
+    toast('采集服务连接失败: select_topic (8766端口) 可能未启动', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '采集选题'; }
+    return;
+  }
+
+  // Step 2: Sync topics from select_topic
+  try {
+    const r2 = await fetch(API + '/api/collect/sync', {method:'POST'});
+    const d2 = await r2.json();
+
+    if (d2.ok) {
+      if (d2.synced > 0) {
+        toast(`同步了 ${d2.synced} 条新选题，已进入流水线`, 'success');
+      } else {
+        toast('未发现新的高分选题（≥80分），可尝试降低分数阈值', '');
+      }
+      loadDashboard();
+      loadArticles();
+      loadTopics();
+    } else {
+      const msg = d2.detail || '未知错误';
+      if (msg.includes('connect') || msg.includes('Connection') || msg.includes('refused')) {
+        toast('同步失败: select_topic 服务未响应', 'error');
+      } else {
+        toast('同步失败: ' + msg, 'error');
+      }
+    }
+  } catch(e) {
+    toast('同步失败: select_topic 服务无法连接', 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '采集选题'; }
+}
+
+async function syncOnly() {
+  const r = await fetch(API + '/api/collect/sync', {method:'POST'});
+  const d = await r.json();
+  if (d.ok) {
+    if (d.synced > 0) {
+      toast(`同步了 ${d.synced} 条新选题到流水线`, 'success');
+    } else {
+      toast('select_topic 中暂无新的高分选题', '');
+    }
+    loadDashboard();
+    loadArticles();
+    loadTopics();
+  } else {
+    toast('同步失败: ' + (d.detail || '未知错误'), 'error');
+  }
+}
+
+// ── Review (M4) ─────────────────────────────────────────────
+
+async function approveArticle(aid) {
+  if (!confirm('确认通过并发布此文章？')) return;
+  try {
+    const r = await fetch(API + '/api/articles/' + aid + '/review', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({action:'approve'})
+    });
+    if (r.ok) {
+      toast('已通过，进入发布队列', 'success');
+      showPage('articles');
+      loadArticles();
+    } else {
+      const d = await r.json();
+      toast('操作失败: ' + (d.detail || '未知错误'), 'error');
+    }
+  } catch(e) { toast('请求失败: ' + e.message, 'error'); }
+}
+
+async function rejectArticle(aid) {
+  const reason = prompt('驳回原因（可留空）：');
+  if (reason === null) return;
+  try {
+    const r = await fetch(API + '/api/articles/' + aid + '/review', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({action:'reject', reason})
+    });
+    if (r.ok) {
+      toast('已驳回', 'success');
+      showPage('articles');
+      loadArticles();
+    } else {
+      const d = await r.json();
+      toast('操作失败: ' + (d.detail || '未知错误'), 'error');
+    }
+  } catch(e) { toast('请求失败: ' + e.message, 'error'); }
+}
+
+async function rescoreArticle(aid) {
+  try {
+    const r = await fetch(API + '/api/articles/' + aid + '/rescore', {method:'POST'});
+    const d = await r.json();
+    if (r.ok) {
+      toast(`已重新评分 (generation ${d.generation_n})`, 'success');
+      showArticleDetail(aid);
+    } else {
+      toast('评分失败: ' + (d.detail || '未知错误'), 'error');
+    }
+  } catch(e) { toast('请求失败: ' + e.message, 'error'); }
+}
+
+async function saveReviewModifications(aid) {
+  const platforms = ['wechat', 'xiaohongshu', 'toutiao'];
+  const mods = {platforms: []};
+  for (const p of platforms) {
+    const title = document.getElementById('edit-title-' + p)?.value;
+    const body = document.getElementById('edit-body-' + p)?.value;
+    const tags = document.getElementById('edit-tags-' + p)?.value;
+    if (title || body || tags) {
+      mods.platforms.push({
+        platform: p,
+        title: title || '',
+        body: body || '',
+        tags: tags ? tags.split(',').map(s=>s.trim()).filter(Boolean) : [],
+      });
+    }
+  }
+  localStorage.setItem('review_draft_' + aid, JSON.stringify(mods));
+
+  try {
+    const r = await fetch(API + '/api/articles/' + aid + '/review', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({action:'save', modifications: mods})
+    });
+    if (r.ok) {
+      toast('草稿已保存', 'success');
+    }
+  } catch(e) { /* silent save */ }
+}
+
+function loadReviewDraft(aid) {
+  try {
+    const saved = localStorage.getItem('review_draft_' + aid);
+    return saved ? JSON.parse(saved) : {platforms: []};
+  } catch(e) { return {platforms: []}; }
+}
+
+// ── Utils ──────────────────────────────────────────────────
+
+function platformLabel(p) {
+  return {wechat:'公众号',xiaohongshu:'小红书',toutiao:'头条',wechat_official:'公众号'}[p] || p;
+}
+
+function fmtTime(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return d.toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+
+function fmtUptime(sec) {
+  if (!sec || sec < 0) return '-';
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
+  if (h >= 24) return Math.floor(h/24)+'d '+(h%24)+'h';
+  return h+'h '+m+'m';
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Agent Management ───────────────────────────────
+
+async function loadAgentsPage() {
+  const container = document.getElementById('agentClusters');
+  const statusEl = document.getElementById('agentSvcStatus');
+  if (!container) return;
+  container.innerHTML = '<div class="spinner" style="margin:20px auto"></div>';
+  if (statusEl) statusEl.textContent = '加载中…';
+
+  try {
+    const r = await fetch(API + '/api/admin/agents');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const agents = d.agents || {};
+
+    if (statusEl) statusEl.textContent = Object.keys(agents).length + ' 个 Agent';
+    renderAgentClusters(container, agents);
+  } catch (e) {
+    container.innerHTML = '<div class="empty">加载 Agent 失败: ' + esc(e.message) + '</div>';
+    if (statusEl) statusEl.textContent = '加载失败';
+  }
+}
+
+function renderAgentClusters(container, agents) {
+  const groups = { writer: '写手集群', editor: '编辑集群', operator: '运营集群' };
+  const ordered = ['writer', 'editor', 'operator'];
+  const grouped = { writer: [], editor: [], operator: [] };
+  for (const [id, agent] of Object.entries(agents)) {
+    const g = agent.group || 'writer';
+    if (grouped[g]) grouped[g].push({id: id, ...agent});
+  }
+
+  let html = '';
+  for (const g of ordered) {
+    const list = grouped[g] || [];
+    if (!list.length) continue;
+    html += '<div class="cluster-title">' + groups[g] + ' (' + list.length + ')</div>';
+    for (const agent of list) {
+      const name = agent.name || agent.id;
+      const role = agent.role || '';
+      const prompt = agent.systemPrompt || agent.systemPrompt || '';
+      const escPrompt = esc(prompt);
+      html += '<div class="agent-card" id="agent-card-' + agent.id + '">';
+      html += `<div class="agent-header" onclick="toggleAgentPrompt('${agent.id}')">`;
+      html += '<span class="agent-name">' + esc(name) + '</span>';
+      html += '<span class="chip chip-' + (g==='writer'?'blue':g==='editor'?'yellow':'green') + '">' + groups[g] + '</span>';
+      html += '<span class="agent-role">' + esc(role) + '</span>';
+      html += '<span style="font-size:11px;color:var(--muted)">▼</span>';
+      html += '</div>';
+      html += '<div class="agent-body" id="agent-body-' + agent.id + '">';
+      html += '<textarea class="agent-prompt" id="agent-prompt-' + agent.id + '" spellcheck="false">' + escPrompt + '</textarea>';
+      html += '<div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">';
+      html += '<span class="save-status" id="save-status-' + agent.id + '" style="font-size:11px;color:var(--green);display:none">已保存</span>';
+      html += `<button class="btn btn-primary btn-sm" onclick="saveAgentPrompt('${agent.id}')">保存</button>`;
+      html += '</div></div></div>';
+    }
+  }
+  container.innerHTML = html || '<div class="empty">暂无 Agent 数据</div>';
+}
+
+function toggleAgentPrompt(agentId) {
+  const body = document.getElementById('agent-body-' + agentId);
+  if (body) body.classList.toggle('open');
+}
+
+async function saveAgentPrompt(agentId) {
+  const textarea = document.getElementById('agent-prompt-' + agentId);
+  const statusEl = document.getElementById('save-status-' + agentId);
+  if (!textarea) return;
+
+  const systemPrompt = textarea.value;
+  if (!systemPrompt.trim()) {
+    if (statusEl) { statusEl.textContent = 'systemPrompt 不能为空'; statusEl.style.color = 'var(--red)'; statusEl.style.display = 'inline'; }
+    return;
+  }
+
+  // Show saving state
+  const btn = textarea.parentElement.querySelector('.btn-primary');
+  if (btn) { btn.textContent = '保存中…'; btn.disabled = true; }
+
+  try {
+    const r = await fetch(API + '/api/admin/agents/' + agentId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ systemPrompt })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (statusEl) { statusEl.textContent = '已保存 ✓'; statusEl.style.color = 'var(--green)'; statusEl.style.display = 'inline'; }
+    setTimeout(() => { if (statusEl) statusEl.style.display = 'none'; }, 2000);
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = '保存失败: ' + e.message; statusEl.style.color = 'var(--red)'; statusEl.style.display = 'inline'; }
+  } finally {
+    if (btn) { btn.textContent = '保存'; btn.disabled = false; }
+  }
+}
+
+function toast(msg, type) {
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type||'');
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ── Init ───────────────────────────────────────────────────
+
+async function loadCollectStatus() {
+  try {
+    const r = await fetch(API + '/api/collect/status');
+    const d = await r.json();
+    const el = document.getElementById('collectIndicator');
+    if (!el || !d.ok) return;
+    const s = d.status;
+    if (s?.running) {
+      el.textContent = '采集进行中...';
+      el.style.color = 'var(--yellow)';
+    } else if (s?.last_run) {
+      el.textContent = '采集: ' + fmtTime(s.last_run);
+      el.style.color = 'var(--muted)';
+    } else {
+      el.textContent = '';
+    }
+  } catch(e) {}
+}
+
+async function init() {
+  const hash = window.location.hash.replace('#','') || 'dashboard';
+  showPage(hash);
+  loadServiceDots();
+  setInterval(loadServiceDots, 30000);
+  loadCollectStatus();
+  setInterval(() => {
+    if (document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
+  }, 30000);
+  setInterval(() => {
+    if (document.getElementById('page-articles').classList.contains('active')) loadArticles();
+  }, 30000);
+}
+
+init();
+</script>
+</body>
+</html>

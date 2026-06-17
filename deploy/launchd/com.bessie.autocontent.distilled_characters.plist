@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bessie.autocontent.distilled_characters</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>main.py</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8767</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/bessie/cursor/Auto_content_production/distilled_characters</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>AUTO_CONTENT_CONFIG</key>
+        <string>/Users/bessie/cursor/Auto_content_production/shared_config.json</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/bessie/cursor/Auto_content_production/distilled_characters/logs/launchd.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/bessie/cursor/Auto_content_production/distilled_characters/logs/launchd.stderr.log</string>
+</dict>
+</plist>

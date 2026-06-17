@@ -1,0 +1,51 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# API keys / config
+shared_config.json
+.autopublish/
+Autopublish/.data/
+Autopublish/.cookies/
+Autopublish/.accounts.json
+Autopublish/.publish_log.json
+
+# Node
+node_modules/
+dist/
+writing/dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Data
+**/data/*.db
+**/data/*.db-*
+**/data/*.bak*
+orchestrator/data/
+orchestrator/assets/
+orchestrator/logs/
+writing/data/
+writing/logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archives
+.archive/
+
+# Logs
+*.log
+/tmp/*.log

@@ -1,0 +1,21 @@
+[run]
+source = orchestrator
+branch = False
+omit =
+    orchestrator/__pycache__/*
+    orchestrator/data/*
+    orchestrator/assets/*
+    orchestrator/logs/*
+    orchestrator/static/*
+    */tests/*
+
+[report]
+# Show statements not exercised so contributors know where to look.
+show_missing = True
+skip_empty = True
+precision = 1
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    \.\.\.

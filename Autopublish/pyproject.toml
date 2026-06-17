@@ -1,0 +1,15 @@
+[project]
+name = "autopublish"
+version = "0.1.0"
+description = "Multi-platform auto-publishing for 微信公众号, 小红书, 今日头条"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+playwright = ["playwright>=1.40"]
+social = []
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bessie.autocontent.writing</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>server/index.ts</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/bessie/cursor/Auto_content_production/writing</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PORT</key>
+        <string>8788</string>
+        <key>AUTO_CONTENT_CONFIG</key>
+        <string>/Users/bessie/cursor/Auto_content_production/shared_config.json</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/bessie/cursor/Auto_content_production/writing/logs/launchd.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/bessie/cursor/Auto_content_production/writing/logs/launchd.stderr.log</string>
+</dict>
+</plist>

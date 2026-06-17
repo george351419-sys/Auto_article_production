@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>名人热点智能匹配选题系统</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="app-header">
+    <h1>名人热点智能匹配选题系统</h1>
+    <div class="header-controls">
+      <select id="globalPositioning" onchange="App.loadTopics()">
+        <option value="business_tech">商业科技</option>
+        <option value="entertainment">娱乐鸡汤</option>
+      </select>
+      <select id="globalWeightMode" onchange="App.loadTopics()">
+        <option value="new_account">新号冷启动</option>
+        <option value="old_account">老号深度运营</option>
+      </select>
+      <select id="globalPlatform" onchange="App.loadTopics()">
+        <option value="wechat">公众号</option>
+        <option value="toutiao">今日头条</option>
+        <option value="xiaohongshu">小红书</option>
+      </select>
+      <input type="text" id="searchInput" placeholder="搜索选题...">
+      <button class="btn btn-secondary" id="btnRefresh">刷新</button>
+      <button class="btn btn-accent" id="btnAutoCollect" title="手动触发全平台热点采集">&#128259; 采集热点</button>
+      <button class="btn btn-primary" id="btnImport">手动导入</button>
+      <span id="collectStatus" class="collect-status"></span>
+    </div>
+  </header>
+
+  <!-- Body -->
+  <div class="app-body">
+    <!-- Topic List (Left) -->
+    <aside class="topic-list-panel">
+      <div class="list-filters">
+        <select id="filterStatus">
+          <option value="">全部状态</option>
+          <option value="pending">待处理</option>
+          <option value="scored">已打分</option>
+          <option value="matched">已匹配</option>
+          <option value="confirmed">已确认</option>
+          <option value="discarded">已淘汰</option>
+          <option value="backup">暂存备选</option>
+        </select>
+        <select id="filterGrade">
+          <option value="">全部评级</option>
+          <option value="S">S 级</option>
+          <option value="A">A 级</option>
+          <option value="B">B 级</option>
+          <option value="C">C 级</option>
+        </select>
+        <select id="filterSourceType">
+          <option value="">全部来源</option>
+          <option value="auto">自动采集</option>
+          <option value="manual">手动导入</option>
+        </select>
+      </div>
+      <div class="topic-list" id="topicList">
+        <div class="empty-state">
+          <div class="empty-icon">📋</div>
+          <p>加载中...</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Detail Panel (Right) -->
+    <main class="detail-panel" id="detailPanel">
+      <div class="empty-state">
+        <div class="empty-icon">👈</div>
+        <p>选择一个选题查看详情</p>
+        <p class="empty-hint">或点击「手动导入」添加新选题</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- Scripts -->
+  <script src="/js/api.js"></script>
+  <script src="/js/components.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

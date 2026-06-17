@@ -1,0 +1,47 @@
+{
+  "server_host": "127.0.0.1",
+  "server_port": 8766,
+  "celebrity_data_dir": "../distilled_characters/data",
+  "db_path": "data/select_topic.db",
+  "default_positioning": "business_tech",
+  "llm_backend": {
+    "name": "deepseek",
+    "type": "openai_compatible",
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "sk-e694f04648ab4091889828442fcd7d98",
+    "model": "deepseek-chat"
+  },
+  "collector": {
+    "enabled": true,
+    "interval_seconds": 3600,
+    "trendradar": {
+      "enabled": true,
+      "command": [
+        "uv",
+        "run",
+        "main.py"
+      ],
+      "working_dir": "../TrendRadar",
+      "timeout_seconds": 60
+    },
+    "direct_scrape": {
+      "enabled": true
+    },
+    "platforms": [
+      "toutiao",
+      "weibo",
+      "xiaohongshu",
+      "newrank",
+      "tophub"
+    ],
+    "distillation": {
+      "max_items_per_batch": 20,
+      "model": "deepseek-chat"
+    },
+    "dedup": {
+      "title_similarity_threshold": 0.7,
+      "lookback_hours": 72
+    },
+    "auto_score_threshold": 80
+  }
+}

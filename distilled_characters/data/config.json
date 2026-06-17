@@ -1,0 +1,21 @@
+{
+  "llm_backends": [
+    {
+      "name": "讯飞 Spark",
+      "type": "openai_compatible",
+      "base_url": "https://spark-api-open.xf-yun.com/v1",
+      "api_key": "16122a064d1ce0b8c2bb35ad88bb7eb3:MjVjMmU0ZTY3YzE3ZjliM2M2YjRlN2Zh",
+      "model": "4.0Ultra",
+      "is_default": true
+    }
+  ],
+  "search_backend": "multi_channel",
+  "search_channels": [
+    "searxng",
+    "open_library",
+    "duckduckgo"
+  ],
+  "web_search_enabled": false,
+  "server_host": "127.0.0.1",
+  "server_port": 8765
+}

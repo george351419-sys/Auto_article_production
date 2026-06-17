@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>蒸笼阁 · 人物思维蒸馏</title>
+  <link rel="stylesheet" href="/css/main.css?v=20">
+  <link rel="stylesheet" href="/css/components.css?v=21">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏮</text></svg>">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-icon">🏮</span>
+        <span class="brand-name">蒸笼阁</span>
+      </div>
+      <nav id="sidebar-nav">
+        <a href="#/" class="nav-item" data-route="/">
+          <span class="nav-icon">▸</span>
+          <span>人物列表</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <span class="version">v1.0</span>
+      </div>
+    </aside>
+
+    <main id="main-content"></main>
+  </div>
+
+  <div id="toast-container"></div>
+  <div id="modal-overlay" class="hidden">
+    <div id="modal-box">
+      <div id="modal-header">
+        <span id="modal-title"></span>
+        <button id="modal-close" class="btn-icon">&times;</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/js/api.js?v=21"></script>
+  <script src="/js/state.js?v=19"></script>
+  <script src="/js/app.js?v=19"></script>
+  <script src="/js/components/character-list.js?v=20"></script>
+  <script src="/js/components/character-detail.js?v=20"></script>
+  <script src="/js/components/material-upload.js?v=22"></script>
+  <script src="/js/components/distillation-run.js?v=19"></script>
+  <script src="/js/components/result-viewer.js?v=22"></script>
+  <script src="/js/components/search-panel.js?v=19"></script>
+  <script src="/js/components/settings.js?v=22"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => App.init());
+  </script>
+</body>
+</html>
