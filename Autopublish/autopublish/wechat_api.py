@@ -12,7 +12,7 @@ import urllib.request
 import urllib.error
 from typing import Any
 
-from autopublish.base import PublishResult, PublishStatus
+from autopublish.base import PublishResult, PublishStatus  # noqa: F401 — PublishStatus used below
 
 WECHAT_API_BASE = "https://api.weixin.qq.com/cgi-bin"
 WECHAT_STABLE_TOKEN_URL = f"{WECHAT_API_BASE}/stable_token"
@@ -68,7 +68,7 @@ class WechatApiPublisher:
             return self._access_token
         req = urllib.request.Request(
             WECHAT_STABLE_TOKEN_URL,
-            data=json.dumps({"grant_type": "client_credential", "appid": self.app_id, "app_secret": self.app_secret, "force_refresh": False}).encode("utf-8"),
+            data=json.dumps({"grant_type": "client_credential", "appid": self.app_id, "secret": self.app_secret, "force_refresh": False}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
         try:
@@ -293,10 +293,10 @@ class WechatApiPublisher:
         """
         try:
             if not cover_path:
-                return PublishResult(status="failed", error_message="封面图为必填项")
+                return PublishResult(status=PublishStatus.FAILED, error_message="封面图为必填项")
             thumb_id = self._upload_thumb(cover_path)
             if not thumb_id:
-                return PublishResult(status="failed", error_message=f"封面图上传失败: {cover_path}")
+                return PublishResult(status=PublishStatus.FAILED, error_message=f"封面图上传失败: {cover_path}")
 
             body_html = self._markdown_body_to_html(body)
 
@@ -308,15 +308,13 @@ class WechatApiPublisher:
             errcode = result.get("errcode", 0)
             media_id = result.get("media_id", "")
             if errcode != 0 or not media_id:
-                return PublishResult(status="failed", error_message=f"草稿创建失败: errcode={errcode} errmsg={result.get('errmsg','')}")
-            print(f"[WechatAPI] Draft created: media_id={media_id}")
-            pub = self._api_post(WECHAT_FREEPUBLISH_SUBMIT_URL, {"media_id": media_id})
-            pub_errcode = pub.get("errcode", 0)
-            if pub_errcode != 0:
-                return PublishResult(status="failed", error_message=f"发布失败: errcode={pub_errcode} errmsg={pub.get('errmsg','')}")
-            print(f"[WechatAPI] Published: {pub}")
-            return PublishResult(status="success", platform_url="https://mp.weixin.qq.com/")
+                return PublishResult(status=PublishStatus.FAILED, error_message=f"草稿创建失败: errcode={errcode} errmsg={result.get('errmsg','')}")
+            print(f"[WechatAPI] Draft saved to inbox: media_id={media_id}")
+            # Only save to draft inbox — do NOT call freepublish/submit.
+            # Group-send requires operator review; the draft will appear in
+            # mp.weixin.qq.com → 草稿箱 for manual publish.
+            return PublishResult(status=PublishStatus.SUCCESS, platform_url="https://mp.weixin.qq.com/")
         except RuntimeError as e:
-            return PublishResult(status="failed", error_message=str(e))
+            return PublishResult(status=PublishStatus.FAILED, error_message=str(e))
         except Exception as e:
-            return PublishResult(status="failed", error_message=f"WechatAPI 异常: {e}")
+            return PublishResult(status=PublishStatus.FAILED, error_message=f"WechatAPI 异常: {e}")

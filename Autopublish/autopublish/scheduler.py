@@ -284,7 +284,7 @@ def execute_publish_plan(
         if log_path.exists():
             try:
                 log_entries = json.loads(log_path.read_text(encoding="utf-8"))
-                for entry in reversed(log_entries[-50:]):  # check last 50 entries
+                for entry in reversed(log_entries):  # scan all entries, not just last 50
                     if (entry.get("article_id") == plan.article_id
                             and entry.get("platform") == platform_str
                             and entry.get("status") == "success"

@@ -30,6 +30,8 @@ venv/
 orchestrator/data/
 orchestrator/assets/
 orchestrator/logs/
+orchestrator/content.db
+orchestrator/content.db-*
 writing/data/
 writing/logs/
 

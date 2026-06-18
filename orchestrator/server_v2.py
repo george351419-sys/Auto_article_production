@@ -828,6 +828,130 @@ async def api_put_credentials(body: dict):
     return await api_get_credentials()
 
 
+# ── Model config (text LLM + image gen) ──────────────────────
+
+_WRITING_DOTENV = _PROJECT_ROOT / "writing" / ".env"
+_SHARED_CONFIG_PATH = _PROJECT_ROOT / "shared_config.json"
+
+
+def _read_dotenv_file(path: Path) -> dict[str, str]:
+    """Generic .env reader — returns key→value dict (unquoted)."""
+    if not path.is_file():
+        return {}
+    result: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, _, v = s.partition("=")
+        v = v.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+            v = v[1:-1]
+        result[k.strip()] = v
+    return result
+
+
+def _write_dotenv_file(path: Path, updates: dict[str, str]) -> None:
+    """Rewrite a .env file with updated keys, preserving all other lines."""
+    existing_lines: list[str] = []
+    if path.is_file():
+        existing_lines = path.read_text(encoding="utf-8").splitlines()
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in existing_lines:
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            out.append(raw)
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in updates:
+            seen.add(key)
+            new_val = updates[key]
+            if new_val == "":
+                continue
+            out.append(f"{key}={new_val}")
+        else:
+            out.append(raw)
+    for key, val in updates.items():
+        if key in seen or val == "":
+            continue
+        out.append(f"{key}={val}")
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def _read_shared_config_raw() -> dict:
+    if not _SHARED_CONFIG_PATH.is_file():
+        return {}
+    try:
+        return json.loads(_SHARED_CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _write_shared_config_raw(cfg: dict) -> None:
+    _SHARED_CONFIG_PATH.write_text(
+        json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    sched._CACHED_CONFIG = None
+
+
+@app.get("/api/model-config")
+async def api_get_model_config():
+    """Return current text LLM and image generation model config."""
+    text_env = _read_dotenv_file(_WRITING_DOTENV)
+    raw_cfg = _read_shared_config_raw()
+    img_cfg = raw_cfg.get("image_gen", {})
+    return {
+        "text": {
+            "base_url": text_env.get("LLM_BASE_URL", ""),
+            "model": text_env.get("LLM_MODEL", ""),
+            "configured": bool(text_env.get("LLM_API_KEY", "").strip()),
+            "masked_key": _mask_secret(text_env.get("LLM_API_KEY", "")),
+        },
+        "image": {
+            "provider": img_cfg.get("provider", "wanx"),
+            "model": img_cfg.get("model", ""),
+            "configured": bool(img_cfg.get("api_key", "").strip()),
+            "masked_key": _mask_secret(img_cfg.get("api_key", "")),
+        },
+    }
+
+
+@app.put("/api/model-config")
+async def api_put_model_config(body: dict):
+    """Update text LLM or image gen model config.
+
+    For text: body = {type:'text', base_url, model, api_key (optional)}
+    For image: body = {type:'image', provider, model, api_key (optional)}
+    """
+    model_type = body.get("type")
+    if model_type == "text":
+        updates: dict[str, str] = {}
+        if "base_url" in body and isinstance(body["base_url"], str):
+            updates["LLM_BASE_URL"] = body["base_url"].strip()
+        if "model" in body and isinstance(body["model"], str):
+            updates["LLM_MODEL"] = body["model"].strip()
+        if body.get("api_key") and isinstance(body["api_key"], str):
+            updates["LLM_API_KEY"] = body["api_key"].strip()
+        if not updates:
+            raise HTTPException(400, "No fields to update")
+        _write_dotenv_file(_WRITING_DOTENV, updates)
+    elif model_type == "image":
+        raw_cfg = _read_shared_config_raw()
+        if "image_gen" not in raw_cfg:
+            raw_cfg["image_gen"] = {}
+        if "provider" in body and isinstance(body["provider"], str):
+            raw_cfg["image_gen"]["provider"] = body["provider"].strip()
+        if "model" in body and isinstance(body["model"], str):
+            raw_cfg["image_gen"]["model"] = body["model"].strip()
+        if body.get("api_key") and isinstance(body["api_key"], str):
+            raw_cfg["image_gen"]["api_key"] = body["api_key"].strip()
+        _write_shared_config_raw(raw_cfg)
+    else:
+        raise HTTPException(400, "type must be 'text' or 'image'")
+    return await api_get_model_config()
+
+
 # ── Accounts proxy ────────────────────────────────────────────
 
 def _autopublish_url() -> str:

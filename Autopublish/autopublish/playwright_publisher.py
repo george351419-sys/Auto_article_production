@@ -308,21 +308,22 @@ class PlaywrightPublisher:
             )
         print(f"[Playwright:xiaohongshu] Active tab: {active}")
 
-        # Step 2: Upload images via file input
-        for img_path in images[:9]:
+        # Step 2: Upload all images at once via file input.
+        # Calling set_input_files() once with a list uploads all images together;
+        # repeated calls replace the previous selection, resulting in only 1 image.
+        valid_images = [p for p in images[:9] if p and __import__('os').path.exists(p)]
+        if valid_images:
             try:
                 file_input = await self._page.query_selector('input[type="file"][accept*="jpg"]')
                 if not file_input:
                     file_input = await self._page.query_selector('input[type="file"]')
                 if file_input:
-                    await file_input.set_input_files(img_path)
-                    await asyncio.sleep(2)
-                    print(f"[Playwright:xiaohongshu] Uploaded: {img_path}")
+                    await file_input.set_input_files(valid_images)
+                    print(f"[Playwright:xiaohongshu] Uploaded {len(valid_images)} images at once")
             except Exception as e:
                 print(f"[Playwright:xiaohongshu] Image upload error: {e}")
-                continue
 
-        await asyncio.sleep(2)  # wait for upload processing
+        await asyncio.sleep(3)  # wait for all uploads to process
 
         # Step 3: Fill title — after upload, input[placeholder*="填写标题"] appears
         title_filled = False
@@ -343,7 +344,9 @@ class PlaywrightPublisher:
 
         # Step 4: Fill body via execCommand (ProseMirror same as Toutiao)
         tag_str = " ".join(f"#{t}" for t in tags[:20]) if tags else ""
-        full_body = f"{body[:1800]}\n\n{tag_str}".strip() if tag_str else body[:2000]
+        # XiaoHongshu enforces a 1000-char body limit (shows warning and blocks publish).
+        # Reserve ~100 chars for hashtag_str; truncate body to 900 to stay safe.
+        full_body = f"{body[:900]}\n\n{tag_str}".strip() if tag_str else body[:1000]
 
         body_filled = False
         for sel in [".ProseMirror", ".tiptap", '[contenteditable="true"]']:

@@ -396,6 +396,129 @@ async def step_reviewing_to_publishing(db: aiosqlite.Connection, article_id: str
                                 payload={"note": "M2 auto-approve"})
 
 
+# ── Wanx inline-image generation ────────────────────────────
+
+
+def _extract_prompt_images(body: str) -> list[tuple[str, str, str]]:
+    """Return list of (full_match, alt_text, prompt_text) for every
+    ![alt](prompt://...) marker in body. Uses depth-counting to handle
+    nested parentheses inside the prompt URL."""
+    results: list[tuple[str, str, str]] = []
+    i = 0
+    while True:
+        start = body.find("![", i)
+        if start == -1:
+            break
+        bracket_end = body.find("](prompt://", start)
+        if bracket_end == -1:
+            break
+        alt_text = body[start + 2: bracket_end]
+        url_start = bracket_end + len("](prompt://")
+        depth, j = 1, url_start
+        while j < len(body) and depth > 0:
+            if body[j] == "(":
+                depth += 1
+            elif body[j] == ")":
+                depth -= 1
+            j += 1
+        if depth != 0:
+            i = start + 1
+            continue
+        prompt_text = body[url_start: j - 1]
+        full_match = body[start: j]
+        results.append((full_match, alt_text, prompt_text))
+        i = j
+    return results
+
+
+async def _wanx_generate_image(prompt: str, dest_dir: str, api_key: str, model: str, size: str) -> str:
+    """Submit a Wanx image-gen task and poll until done. Returns local file path, '' on error."""
+    import asyncio as _asyncio
+    from pathlib import Path as _Path
+    submit_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
+    poll_base  = "https://dashscope.aliyuncs.com/api/v1/tasks/"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
+                "X-DashScope-Async": "enable"}
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.post(submit_url, headers=headers, json={
+                "model": model,
+                "input": {"prompt": prompt[:1500]},  # Wanx prompt limit
+                "parameters": {"size": size, "n": 1},
+            })
+            r.raise_for_status()
+            task_id = r.json()["output"]["task_id"]
+
+        for _ in range(40):  # poll up to 120s
+            await _asyncio.sleep(3)
+            async with httpx.AsyncClient(timeout=15) as c:
+                pr = await c.get(f"{poll_base}{task_id}",
+                                  headers={"Authorization": f"Bearer {api_key}"})
+                pr.raise_for_status()
+                out = pr.json()["output"]
+            status = out.get("task_status", "")
+            if status == "SUCCEEDED":
+                img_url = out["results"][0]["url"]
+                break
+            if status in ("FAILED", "CANCELED"):
+                logger.warning("Wanx task %s %s", task_id, status)
+                return ""
+        else:
+            logger.warning("Wanx task %s timed out", task_id)
+            return ""
+
+        dest = _Path(dest_dir)
+        dest.mkdir(parents=True, exist_ok=True)
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
+            img_r = await c.get(img_url)
+            img_r.raise_for_status()
+        fname = dest / f"wanx_{uuid.uuid4().hex[:10]}.jpg"
+        fname.write_bytes(img_r.content)
+        return str(fname.resolve())
+    except Exception as e:
+        logger.warning("Wanx image generation failed: %s", e)
+        return ""
+
+
+async def _replace_prompt_images_with_wanx(
+    body: str, article_id: str, platform: str,
+) -> tuple[str, list[str]]:
+    """Replace up to max_inline_images prompt:// placeholders with real
+    Wanx-generated images. Returns (updated_body, list_of_local_paths).
+    Remaining unresolved prompt:// lines are stripped from the body.
+    """
+    config = _load_config()
+    img_cfg = config.get("image_gen", {})
+    api_key = img_cfg.get("api_key", "")
+    model   = img_cfg.get("model", "wanx2.1-t2i-turbo")
+    size    = img_cfg.get("size", "1024*1024")
+    max_n   = int(img_cfg.get("max_inline_images", 3))
+
+    if not api_key:
+        # No API key — just strip prompt:// lines and return
+        body = "\n".join(ln for ln in body.split("\n") if "](prompt://" not in ln)
+        return body, []
+
+    markers = _extract_prompt_images(body)
+    dest_dir = str(THIS_DIR / "assets" / article_id / platform)
+    generated: list[str] = []
+
+    for i, (full_match, alt_text, prompt_text) in enumerate(markers):
+        if i < max_n:
+            local = await _wanx_generate_image(prompt_text, dest_dir, api_key, model, size)
+            if local:
+                # Replace the prompt:// marker with a real local-path image link
+                body = body.replace(full_match, f"![{alt_text}]({local})", 1)
+                generated.append(local)
+                continue
+        # Could not generate (or over limit) — strip the line entirely
+        body = body.replace(full_match, "", 1)
+
+    # Clean up any stray blank lines left by removal
+    body = re.sub(r'\n{3,}', '\n\n', body).strip()
+    return body, generated
+
+
 # Orchestrator/scorer use "wechat" everywhere; Autopublish wants "wechat_official".
 # Only this mapping crosses the boundary — keep it next to the code that does.
 _SCORER_TO_AUTOPUBLISH = {
@@ -453,6 +576,11 @@ async def _per_platform_payload(
     titles = pp.get("titles", []) or []
     title = titles[0] if titles else topic_title
     body = pp.get("formatted_article") or pp.get("formattedArticle") or ""
+    # Replace writing-agent prompt:// image placeholders with real Wanx-generated
+    # images. Unresolved markers (over limit or API failure) are stripped.
+    body, inline_generated = await _replace_prompt_images_with_wanx(
+        body, article["id"], platform
+    )
     summary = pp.get("summary", "")
     tags = pp.get("tags", []) or []
     keywords = pp.get("keywords", []) or []
@@ -475,6 +603,16 @@ async def _per_platform_payload(
                 lp = await _download_url_to_tmp(url)
         if lp and lp != cover_path:
             image_paths.append(lp)
+
+    # Append Wanx-generated inline images (they're already embedded in body via
+    # local paths, but XiaoHongshu also needs them in image_paths for upload).
+    for lp in inline_generated:
+        if lp and lp not in image_paths and lp != cover_path:
+            image_paths.append(lp)
+
+    # XiaoHongshu requires ≥1 image in image_paths; fall back to cover if empty.
+    if not image_paths and cover_path:
+        image_paths.append(cover_path)
 
     # Fallback: extract first image URL from Markdown body as cover.
     if not cover_path and body:

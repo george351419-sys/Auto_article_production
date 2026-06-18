@@ -62,16 +62,41 @@ def make_xiaohongshu_package(plan: PublishPlan, input_data: PublishInput) -> Non
     - cover + images: 3:4 vertical, 1–9 images (required for 图文笔记)
     - author: inherited from account
     """
-    topic_title = (input_data.topic_title or input_data.title)[:14]
-    plan.title = f"{topic_title}: 普通人怎么看"[:20]
-    plan.body = (
-        f"这件事和普通人的关系是：它会影响你的选择成本。\n\n"
-        f"先别急着站队，先看三个问题：\n"
-        f"1. 它会不会帮你省时间、省钱或少踩坑？\n"
-        f"2. 它改变的是短期热闹，还是长期习惯？\n"
-        f"3. 如果明天热度没了，你还能用它做什么判断？\n\n"
-        f"我的结论：{input_data.summary or input_data.body[:80]}"
-    )
+    import re
+
+    # Use the XiaoHongshu-specific title produced by the writing agent.
+    # XiaoHongshu's counter counts emoji and some full-width punctuation as 2 chars.
+    # Strip only emoji (supplementary-plane U+1F000-U+1FAFF, and BMP symbol blocks),
+    # then replace curly quotes with ASCII so they count as 1 char each.
+    # Truncate to 17 Python chars to stay within XiaoHongshu's 20-char display limit.
+    title = input_data.title
+    # Strip emoji only. Uses \u/\U escapes (pure ASCII source) to avoid encoding issues.
+    # U+2600-U+2BFF: BMP symbol blocks (Misc Symbols, Dingbats, Arrows).
+    # U+1F000-U+1FAFF: All supplementary-plane emoji.
+    # CJK starts at U+4E00 — well outside these ranges.
+    _emoji_pat = re.compile('[☀-⯿\U0001F000-\U0001FAFF️]+', re.UNICODE)
+    title = _emoji_pat.sub('', title)
+    title = title.replace('\u2018', "'").replace('\u2019', "'")
+    title = title.replace('\u201c', '"').replace('\u201d', '"')
+    plan.title = title.strip()[:17]
+
+    # Use the actual formattedArticle body from the writing agent.
+    # Strip markdown elements that don't render in the plain-text editor:
+    # - image markers (images are uploaded separately via image_paths)
+    # - heading symbols (#) — keep the heading text
+    # - horizontal rules
+    # - bold/italic markers
+    # - blockquote markers
+    # XiaoHongshu body limit: 1000 chars (platform enforced)
+    body = re.sub(r'!\[[^\]]*\]\([^)]*\)\n?', '', input_data.body)
+    body = re.sub(r'^#{1,6}\s+', '', body, flags=re.MULTILINE)
+    body = re.sub(r'^---+$', '', body, flags=re.MULTILINE)
+    body = re.sub(r'\*\*(.+?)\*\*', r'\1', body, flags=re.DOTALL)
+    body = re.sub(r'_(.+?)_', r'\1', body)
+    body = re.sub(r'^>\s*', '', body, flags=re.MULTILINE)
+    body = re.sub(r'\n{3,}', '\n\n', body).strip()
+
+    plan.body = body[:1000]
     plan.summary = input_data.summary[:80]
     plan.tags = list(dict.fromkeys([*input_data.keywords[:4], *input_data.tags[:2], "普通人视角", "热点解读", "自我提升"]))
     # location, cover_path, image_paths are passed through metadata

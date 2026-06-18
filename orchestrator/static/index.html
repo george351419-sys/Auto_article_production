@@ -334,8 +334,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
       </div>
       <p style="color:var(--muted);font-size:12px;margin-bottom:16px">
         所有秘密本地写盘。Cookie / 微信 API 信息保存到
-        <code style="font-size:11px">Autopublish/.data/accounts.json</code>；模型 API Key 保存到项目根
-        <code style="font-size:11px">.env</code>。
+        <code style="font-size:11px">Autopublish/.data/accounts.json</code>；
+        文本模型 API Key 保存到 <code style="font-size:11px">writing/.env</code>；
+        图片模型配置保存到 <code style="font-size:11px">shared_config.json</code>。
       </p>
       <div id="accountsContent"><div class="empty">加载中…</div></div>
     </div>
@@ -879,23 +880,123 @@ const PLATFORM_META = {
   },
 };
 
+// ── Model catalog ────────────────────────────────────────────
+const TEXT_MODEL_CATALOG = {
+  qwen:      { label: '通义千问 (Qwen / 阿里云)',   base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-plus', 'qwen-max', 'qwen-turbo', 'qwen3.5-flash', 'qwq-32b'] },
+  deepseek:  { label: 'DeepSeek',                    base_url: 'https://api.deepseek.com/v1',                       models: ['deepseek-chat', 'deepseek-reasoner'] },
+  openai:    { label: 'OpenAI',                       base_url: 'https://api.openai.com/v1',                         models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o3-mini'] },
+  moonshot:  { label: 'Moonshot (Kimi)',              base_url: 'https://api.moonshot.cn/v1',                        models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'] },
+  zhipu:     { label: '智谱 (GLM)',                   base_url: 'https://open.bigmodel.cn/api/paas/v4',              models: ['glm-4', 'glm-4-flash', 'glm-4-air', 'glm-z1-flash'] },
+  minimax:   { label: 'MiniMax',                      base_url: 'https://api.minimax.chat/v1',                       models: ['abab6.5s-chat', 'abab6.5g-chat'] },
+  baichuan:  { label: '百川 (Baichuan)',               base_url: 'https://api.baichuan-ai.com/v1',                    models: ['Baichuan4', 'Baichuan3-Turbo'] },
+  siliconflow:{ label: 'SiliconFlow',                 base_url: 'https://api.siliconflow.cn/v1',                     models: ['Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3', 'Pro/deepseek-ai/DeepSeek-V3'] },
+};
+const IMAGE_MODEL_CATALOG = {
+  wanx:     { label: '阿里云万象 (Wanx)',   models: ['wanx2.1-t2i-turbo', 'wanx2.1-t2i-plus', 'wanx-v1'] },
+  volcano:  { label: '火山引擎 (Doubao)',    models: ['high_aes_general_v21_L', 'high_aes_general_v20_L'] },
+  openai:   { label: 'OpenAI DALL·E',       models: ['dall-e-3', 'dall-e-2'] },
+  stability:{ label: 'Stability AI',        models: ['stable-image-core', 'stable-diffusion-xl-1024-v1-0'] },
+};
+
+// Detect which provider a given base_url/model belongs to
+function _detectTextProvider(base_url, model) {
+  for (const [key, meta] of Object.entries(TEXT_MODEL_CATALOG)) {
+    if (base_url && base_url.includes && base_url.includes(meta.base_url.replace('https://', '').split('/')[0])) return key;
+    if (model && meta.models.includes(model)) return key;
+  }
+  return Object.keys(TEXT_MODEL_CATALOG)[0];
+}
+
 async function loadAccountsPage() {
   const el = document.getElementById('accountsContent');
   el.innerHTML = '<div class="empty">加载中…</div>';
   try {
-    const [accR, credR] = await Promise.all([
+    const [accR, modelR] = await Promise.all([
       fetch(API + '/api/accounts'),
-      fetch(API + '/api/credentials'),
+      fetch(API + '/api/model-config'),
     ]);
     const accounts = await accR.json();
-    const creds = await credR.json();
-    el.innerHTML = renderAccountsPage(accounts, creds);
+    const modelCfg = await modelR.json();
+    el.innerHTML = renderAccountsPage(accounts, modelCfg);
   } catch(e) {
     el.innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
   }
 }
 
-function renderAccountsPage(accounts, creds) {
+function renderModelCard(type, cfg) {
+  const isText = type === 'text';
+  const catalog = isText ? TEXT_MODEL_CATALOG : IMAGE_MODEL_CATALOG;
+  const title = isText ? '文本生成模型' : '图片生成模型';
+  const hint = isText
+    ? '用于文章写作的 LLM。配置后写作模块（writing/.env）立即生效，无需重启。'
+    : '用于文章配图生成。配置后图片生成流水线立即使用新模型。';
+
+  // Detect current provider
+  const currentProvider = isText
+    ? _detectTextProvider(cfg.base_url, cfg.model)
+    : (cfg.provider || Object.keys(catalog)[0]);
+  const providerMeta = catalog[currentProvider] || Object.values(catalog)[0];
+  const currentModel = cfg.model || (providerMeta ? providerMeta.models[0] : '');
+
+  const providerOptions = Object.entries(catalog).map(([k, m]) =>
+    `<option value="${k}" ${k===currentProvider?'selected':''}>${esc(m.label)}</option>`
+  ).join('');
+
+  const modelOptions = (providerMeta ? providerMeta.models : [currentModel]).map(m =>
+    `<option value="${m}" ${m===currentModel?'selected':''}>${esc(m)}</option>`
+  ).join('');
+
+  const baseUrlField = isText ? `
+    <div style="margin-bottom:10px">
+      <label style="font-size:12px;color:var(--muted)">API 接入地址</label>
+      <input id="mc-baseurl-${type}" type="text" value="${esc(cfg.base_url||'')}" placeholder="https://api.example.com/v1" style="font-family:ui-monospace,SF Mono,Consolas,monospace;font-size:12px" />
+    </div>` : '';
+
+  return `<div class="card" style="background:var(--surface2)">
+    <div class="card-header">
+      <h3>${title}
+        <span class="chip ${cfg.configured?'chip-green':'chip-red'}" style="margin-left:8px">${cfg.configured?'已配置':'未配置'}</span>
+      </h3>
+      ${cfg.configured ? `<span style="font-size:11px;color:var(--muted);font-family:ui-monospace,monospace">${esc(cfg.masked_key)}</span>` : ''}
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${hint}</div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:12px;color:var(--muted)">模型厂商</label>
+      <select id="mc-provider-${type}" onchange="onModelProviderChange('${type}')">${providerOptions}</select>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:12px;color:var(--muted)">模型</label>
+      <select id="mc-model-${type}">${modelOptions}</select>
+    </div>
+    ${baseUrlField}
+    <div style="margin-bottom:10px">
+      <label style="font-size:12px;color:var(--muted)">API Key</label>
+      <input id="mc-apikey-${type}" type="password" placeholder="${cfg.configured?'留空保持现值；填新值会覆盖':'sk-...'}" autocomplete="new-password" />
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary btn-sm" onclick="saveModelConfig('${type}')">保存</button>
+    </div>
+  </div>`;
+}
+
+function onModelProviderChange(type) {
+  const catalog = type === 'text' ? TEXT_MODEL_CATALOG : IMAGE_MODEL_CATALOG;
+  const providerKey = document.getElementById('mc-provider-' + type).value;
+  const meta = catalog[providerKey];
+  if (!meta) return;
+
+  // Update model dropdown
+  const modelSel = document.getElementById('mc-model-' + type);
+  modelSel.innerHTML = meta.models.map(m => `<option value="${m}">${esc(m)}</option>`).join('');
+
+  // Update base_url for text models
+  if (type === 'text') {
+    const buEl = document.getElementById('mc-baseurl-text');
+    if (buEl && meta.base_url) buEl.value = meta.base_url;
+  }
+}
+
+function renderAccountsPage(accounts, modelCfg) {
   const platformCards = Object.entries(PLATFORM_META).map(([key, meta]) => {
     const acc = accounts[key] || {cookie:'', account_name:'', logged_in:false, mode: meta.mode};
     const present = !!(acc.cookie || '').trim();
@@ -923,29 +1024,14 @@ function renderAccountsPage(accounts, creds) {
     </div>`;
   }).join('');
 
-  const credCards = (creds.items || []).map(item => `
-    <div class="card" style="background:var(--surface2)">
-      <div class="card-header">
-        <h3>${esc(item.label)}
-          <span class="chip ${item.configured?'chip-green':'chip-red'}" style="margin-left:8px">${item.configured?'已配置':'未配置'}</span>
-        </h3>
-        ${item.configured ? `<span style="font-size:11px;color:var(--muted);font-family:ui-monospace,monospace">${esc(item.masked)}</span>` : ''}
-      </div>
-      <div style="margin-bottom:10px">
-        <label style="font-size:12px;color:var(--muted)">${esc(item.key)}</label>
-        <input id="cred-${item.key}" type="password" placeholder="${item.configured?'留空保持现值；填值会覆盖':'sk-...'}" autocomplete="new-password" />
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-primary btn-sm" onclick="saveCredential('${item.key}')">保存</button>
-        ${item.configured ? `<button class="btn btn-outline btn-sm" onclick="clearCredential('${item.key}')">清除</button>` : ''}
-      </div>
-    </div>`).join('');
+  const textCard = renderModelCard('text', modelCfg.text || {});
+  const imageCard = renderModelCard('image', modelCfg.image || {});
 
   return `
     <h3 style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px">发布平台账号</h3>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px;margin-bottom:24px">${platformCards}</div>
-    <h3 style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px">模型 API Key (.env)</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px">${credCards}</div>
+    <h3 style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px">模型配置</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px">${textCard}${imageCard}</div>
   `;
 }
 
@@ -994,29 +1080,30 @@ async function verifyAccount(platform) {
   } catch(e) { toast('请求失败: ' + e.message, 'error'); }
 }
 
-async function saveCredential(key) {
-  const v = document.getElementById('cred-' + key).value.trim();
-  if (!v) { toast('请填值后再保存', 'error'); return; }
-  try {
-    const r = await fetch(API + '/api/credentials', {
-      method:'PUT', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({[key]: v}),
-    });
-    if (!r.ok) { const d = await r.json().catch(()=>({})); toast('保存失败: ' + (d.detail||r.status), 'error'); return; }
-    toast('已保存 ' + key, 'success');
-    loadAccountsPage();
-  } catch(e) { toast('请求失败: ' + e.message, 'error'); }
-}
+async function saveModelConfig(type) {
+  const providerKey = document.getElementById('mc-provider-' + type).value;
+  const model = document.getElementById('mc-model-' + type).value;
+  const apiKey = document.getElementById('mc-apikey-' + type).value.trim();
 
-async function clearCredential(key) {
-  if (!confirm('确定要清除 ' + key + ' 吗？将从 .env 中删除该行。')) return;
+  const catalog = type === 'text' ? TEXT_MODEL_CATALOG : IMAGE_MODEL_CATALOG;
+  const providerMeta = catalog[providerKey] || {};
+
+  const body = { type, model };
+  if (type === 'text') {
+    const buEl = document.getElementById('mc-baseurl-text');
+    body.base_url = buEl ? buEl.value.trim() : (providerMeta.base_url || '');
+  } else {
+    body.provider = providerKey;
+  }
+  if (apiKey) body.api_key = apiKey;
+
   try {
-    const r = await fetch(API + '/api/credentials', {
+    const r = await fetch(API + '/api/model-config', {
       method:'PUT', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({[key]: ''}),
+      body: JSON.stringify(body),
     });
-    if (!r.ok) { toast('清除失败', 'error'); return; }
-    toast('已清除', 'success');
+    if (!r.ok) { const d = await r.json().catch(()=>({})); toast('保存失败: ' + (d.detail||d.error||r.status), 'error'); return; }
+    toast(type === 'text' ? '文本模型已保存' : '图片模型已保存', 'success');
     loadAccountsPage();
   } catch(e) { toast('请求失败: ' + e.message, 'error'); }
 }
