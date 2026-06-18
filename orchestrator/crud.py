@@ -251,9 +251,20 @@ async def list_articles(
     return [_row_to_dict(r) for r in rows]
 
 
+_ARTICLE_UPDATABLE: frozenset[str] = frozenset({
+    "status", "character_id", "writing_task_id", "writing_task_detail", "final_package",
+    "retry_count", "next_retry_at", "last_error_code", "last_error_message",
+    "review_deadline_at",
+})
+
+
 async def update_article(article_id: str, **fields: Any) -> dict[str, Any] | None:
     if not fields:
         return await get_article(article_id)
+
+    bad = set(fields) - _ARTICLE_UPDATABLE
+    if bad:
+        raise ValueError(f"update_article: disallowed columns {sorted(bad)}")
 
     fields["updated_at"] = _now()
     set_clause = ", ".join(f"{k} = ?" for k in fields)

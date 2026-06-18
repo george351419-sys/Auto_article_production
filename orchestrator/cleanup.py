@@ -30,6 +30,7 @@ from typing import Any
 import aiosqlite
 
 import crud
+import state_machine as sm
 
 logger = logging.getLogger("cleanup")
 
@@ -142,6 +143,7 @@ async def run_sweep(trigger: str = "cron_3h") -> dict[str, Any]:
         return {"ok": False, "error": "Another sweep is already running"}
 
     lock.write_text(str(os.getpid()))
+    size_before = await _get_data_dir_size()
     logger.info("Cleanup sweep started (trigger=%s)", trigger)
 
     result: dict[str, Any] = {
@@ -161,36 +163,43 @@ async def run_sweep(trigger: str = "cron_3h") -> dict[str, Any]:
             asset_ids = await find_expired_assets(conn)
             dup_topic_ids = await find_expired_duplicated_topics(conn)
             rejected_article_ids = await find_expired_rejected_articles(conn)
-            stuck_48h = await find_stuck_articles(conn, "collected", 48)
-            stuck_48h += await find_stuck_articles(conn, "matched", 48)
+            stuck_collected = await find_stuck_articles(conn, "collected", 48)
+            stuck_matched = await find_stuck_articles(conn, "matched", 48)
             abandoned_failed = await find_abandoned_failed_articles(conn)
 
             # 2. Dry-run check
-            total = len(asset_ids) + len(dup_topic_ids) + len(rejected_article_ids)
+            total = (len(asset_ids) + len(dup_topic_ids) + len(rejected_article_ids)
+                     + len(stuck_collected) + len(stuck_matched) + len(abandoned_failed))
             if total > DRY_RUN_MAX:
                 result["error"] = f"Dry-run limit: {total} items would be deleted (max {DRY_RUN_MAX})"
                 await conn.commit()
                 return result
 
-            # 3. Transition stuck articles → failed
-            for aid in stuck_48h:
+            # 3. Transition stuck articles → failed via state machine (preserves audit_log).
+            for aid in stuck_collected:
                 try:
-                    await conn.execute(
-                        "UPDATE article SET status = 'failed', updated_at = ? WHERE id = ?",
-                        (crud._now(), aid),
-                    )
-                except Exception:
-                    pass
+                    await sm.transition_article(conn, aid, "failed", "cron",
+                                                from_state="collected",
+                                                payload={"reason": "stuck >48h"})
+                except Exception as e:
+                    logger.warning("Cleanup: failed to transition stuck article %s: %s", aid, e)
 
-            # 4. Transition abandoned failed → rejected
+            for aid in stuck_matched:
+                try:
+                    await sm.transition_article(conn, aid, "failed", "cron",
+                                                from_state="matched",
+                                                payload={"reason": "stuck >48h"})
+                except Exception as e:
+                    logger.warning("Cleanup: failed to transition stuck article %s: %s", aid, e)
+
+            # 4. Transition abandoned failed → rejected via state machine.
             for aid in abandoned_failed:
                 try:
-                    await conn.execute(
-                        "UPDATE article SET status = 'rejected', updated_at = ? WHERE id = ?",
-                        (crud._now(), aid),
-                    )
-                except Exception:
-                    pass
+                    await sm.transition_article(conn, aid, "rejected", "cron",
+                                                from_state="failed",
+                                                payload={"reason": "retries exhausted >7d"})
+                except Exception as e:
+                    logger.warning("Cleanup: failed to transition abandoned article %s: %s", aid, e)
 
             # 5. Delete assets (mark deleted, will physically delete files later)
             for aid in asset_ids:
@@ -200,8 +209,11 @@ async def run_sweep(trigger: str = "cron_3h") -> dict[str, Any]:
                 )
             result["deleted_assets"] = len(asset_ids)
 
-            # 6. Delete duplicated topics
+            # 6. Delete duplicated topics — must delete linked articles first (FK constraint).
             for tid in dup_topic_ids:
+                await conn.execute(
+                    "DELETE FROM article WHERE topic_id = ? AND status = 'duplicated'", (tid,)
+                )
                 await conn.execute("DELETE FROM topic WHERE id = ?", (tid,))
             result["deleted_topics"] = len(dup_topic_ids)
 
@@ -224,8 +236,8 @@ async def run_sweep(trigger: str = "cron_3h") -> dict[str, Any]:
         finally:
             await conn.close()
 
-        # 9. Calculate freed bytes
-        result["freed_bytes"] = await _get_data_dir_size()
+        # 9. Calculate freed bytes (delta against size captured before sweep).
+        result["freed_bytes"] = max(0, size_before - await _get_data_dir_size())
 
     except Exception as e:
         logger.error("Cleanup sweep failed: %s", e)

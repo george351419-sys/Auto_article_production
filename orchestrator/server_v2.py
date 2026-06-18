@@ -228,10 +228,18 @@ async def api_get_topic(topic_id: str):
     topic = await crud.get_topic(topic_id)
     if not topic:
         raise HTTPException(404, "Topic not found")
-    # Also get linked article if exists
-    articles = await crud.list_articles(limit=1)
-    linked = [a for a in articles if a.get("topic_id") == topic_id]
-    topic["article"] = linked[0] if linked else None
+    # Look up the article linked to this topic directly (list_articles only fetches
+    # the most recent N articles globally and may miss the linked article).
+    conn = await crud.get_db()
+    try:
+        cursor = await conn.execute(
+            "SELECT * FROM article WHERE topic_id = ? ORDER BY created_at DESC LIMIT 1",
+            (topic_id,),
+        )
+        row = await cursor.fetchone()
+        topic["article"] = crud._row_to_dict(row) if row else None
+    finally:
+        await conn.close()
     return topic
 
 

@@ -19,7 +19,6 @@ from typing import Any  # noqa: F401 — used in dynamic type annotations
 
 import aiosqlite
 import httpx
-import urllib.request
 
 import assets as assets_mod
 import crud
@@ -38,6 +37,9 @@ from bridge import (
 logger = logging.getLogger("scheduler_v2")
 
 THIS_DIR = Path(__file__).parent
+
+# Maximum time a writing task may stay in "running" without progress before we auto-fail it
+WRITING_TASK_STUCK_TIMEOUT_SECONDS = 60 * 30  # 30 minutes
 
 
 def _now() -> str:
@@ -263,8 +265,35 @@ async def step_poll_writing(db: aiosqlite.Connection, article: dict) -> bool:
                                     from_state="writing")
         return True
     else:
-        # running / needs_material / needs_config / needs_human / draft
+        # running / needs_material / needs_config / needs_human / draft / needs_material
         # Stay in 'writing', update detail for frontend visibility
+        # ── Stuck-task detection ──────────────────────────────
+        # If the task has been "running" (or "needs_material") for more than
+        # WRITING_TASK_STUCK_TIMEOUT_SECONDS without making progress, it likely
+        # means the writing module's in-flight promise was lost during a restart.
+        # Auto-fail to trigger the retry mechanism.
+        if status in ("running", "needs_material"):
+            task_updated = task_obj.get("updatedAt") or task_obj.get("updated_at", "")
+            if task_updated:
+                try:
+                    if isinstance(task_updated, str) and "T" in task_updated:
+                        task_updated_dt = datetime.fromisoformat(task_updated.replace("Z", "+00:00"))
+                    else:
+                        task_updated_dt = datetime.fromisoformat(str(task_updated))
+                    age_seconds = (datetime.now(timezone.utc) - task_updated_dt).total_seconds()
+                    if age_seconds > WRITING_TASK_STUCK_TIMEOUT_SECONDS:
+                        logger.warning(
+                            "Writing task %s stuck in '%s' for %ds (>%ds); auto-failing for retry.",
+                            task_id, status, age_seconds, WRITING_TASK_STUCK_TIMEOUT_SECONDS,
+                        )
+                        await _fail_with_retry(
+                            db, article["id"], from_state="writing",
+                            error=f"写作任务在 '{status}' 状态卡住超过 {age_seconds//60:.0f} 分钟，自动重试。",
+                        )
+                        return True
+                except (ValueError, TypeError) as e:
+                    logger.warning("Could not parse task updatedAt '%s': %s", task_updated, e)
+
         detail_msg = _writing_status_message(status)
         await db.execute(
             "UPDATE article SET last_error_message = ?, writing_task_detail = ?, updated_at = ? WHERE id = ?",
@@ -328,6 +357,10 @@ async def step_drafted_to_scored(db: aiosqlite.Connection, article: dict) -> Non
         ),
     )
 
+    # Determine next generation number so retries don't collide with existing scores.
+    existing_scores = await crud.get_scores_for_article(article_id)
+    next_gen = max((s.get("generation_n", 0) for s in existing_scores), default=0) + 1
+
     scores = score_data.get("scores", {})
     for platform, s in scores.items():
         await crud.create_score(
@@ -335,7 +368,7 @@ async def step_drafted_to_scored(db: aiosqlite.Connection, article: dict) -> Non
             platform=platform,
             score_val=s.get("score", 0),
             reason=s.get("reason", ""),
-            generation_n=1,
+            generation_n=next_gen,
             conn=db,
         )
 
@@ -380,7 +413,27 @@ def _decide_publish_platforms(scores: list[dict]) -> list[str]:
     return [p for p in ("wechat", "xiaohongshu", "toutiao") if p in chosen]
 
 
-def _per_platform_payload(
+async def _download_url_to_tmp(url: str) -> str:
+    """Download an HTTP URL to a temp file using async httpx. Returns local path, '' on failure."""
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as c:
+            r = await c.get(url)
+            r.raise_for_status()
+            ct = r.headers.get("content-type", "")
+            sfx = ".jpg"
+            if "png" in ct: sfx = ".png"
+            elif "webp" in ct: sfx = ".webp"
+            elif "gif" in ct: sfx = ".gif"
+            fd, tmp = tempfile.mkstemp(suffix=sfx)
+            with os.fdopen(fd, "wb") as f:
+                f.write(r.content)
+            return tmp
+    except Exception as e:
+        logger.warning("Failed to download %s: %s", url, e)
+        return ""
+
+
+async def _per_platform_payload(
     article: dict,
     final_pkg: dict,
     platform: str,
@@ -406,22 +459,10 @@ def _per_platform_payload(
 
     cover_path = pp.get("coverPath") or pp.get("cover_path") or ""
 
-    # Download cover image from HTTP URL to temp file if not local
+    # Download cover image from HTTP URL to temp file if not already local.
+    # Uses async httpx to avoid blocking the event loop.
     if cover_path and (cover_path.startswith("http://") or cover_path.startswith("https://")):
-        try:
-            resp = urllib.request.urlopen(cover_path, timeout=10)
-            ct = resp.headers.get("Content-Type", "")
-            sfx = ".jpg"
-            if "png" in ct: sfx = ".png"
-            elif "webp" in ct: sfx = ".webp"
-            elif "gif" in ct: sfx = ".gif"
-            fd, tmp = tempfile.mkstemp(suffix=sfx)
-            with os.fdopen(fd, "wb") as f:
-                f.write(resp.read())
-            cover_path = tmp
-        except Exception as e:
-            logger.warning("Failed to download cover image %s: %s", cover_path, e)
-            cover_path = ""
+        cover_path = await _download_url_to_tmp(cover_path)
 
     image_paths: list[str] = []
     for img in pp.get("images", []) or []:
@@ -431,44 +472,20 @@ def _per_platform_payload(
         if not lp:
             url = img.get("url", "")
             if url and (url.startswith("http://") or url.startswith("https://")):
-                try:
-                    resp = urllib.request.urlopen(url, timeout=10)
-                    ct = resp.headers.get("Content-Type", "")
-                    sfx = ".jpg"
-                    if "png" in ct: sfx = ".png"
-                    elif "webp" in ct: sfx = ".webp"
-                    elif "gif" in ct: sfx = ".gif"
-                    fd, tmp = tempfile.mkstemp(suffix=sfx)
-                    with os.fdopen(fd, "wb") as f:
-                        f.write(resp.read())
-                    lp = tmp
-                except Exception as e:
-                    logger.warning("Failed to download image %s: %s", url, e)
+                lp = await _download_url_to_tmp(url)
         if lp and lp != cover_path:
             image_paths.append(lp)
 
-    # Fallback: if cover_path is still empty, try to extract first image from body text
-    # Body contains Markdown images like ![alt](url) — grab the first valid URL as cover
+    # Fallback: extract first image URL from Markdown body as cover.
     if not cover_path and body:
         import re as _re
         m = _re.search(r'!\[([^\]]*)\]\(([^)]+)\)', body)
         if m:
             url = m.group(2)
             if url and not url.startswith("prompt://") and (url.startswith("http://") or url.startswith("https://")):
-                try:
-                    resp = urllib.request.urlopen(url, timeout=10)
-                    ct = resp.headers.get("Content-Type", "")
-                    sfx = ".jpg"
-                    if "png" in ct: sfx = ".png"
-                    elif "webp" in ct: sfx = ".webp"
-                    elif "gif" in ct: sfx = ".gif"
-                    fd, tmp = tempfile.mkstemp(suffix=sfx)
-                    with os.fdopen(fd, "wb") as f:
-                        f.write(resp.read())
-                    cover_path = tmp
-                    logger.info("Extracted cover image from body: %s → %s", url, tmp)
-                except Exception as e:
-                    logger.warning("Failed to download body cover image %s: %s", url, e)
+                cover_path = await _download_url_to_tmp(url)
+                if cover_path:
+                    logger.info("Extracted cover image from body: %s → %s", url, cover_path)
 
     publishing_cfg = config.get("publishing", {})
     return {
@@ -504,9 +521,10 @@ async def _await_autopublish(
     Returns the final progress payload (always a dict). On timeout the
     returned dict has {"done": False, "error": "polling_timeout"}.
     """
-    deadline = asyncio.get_event_loop().time() + timeout_s
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_s
     last: dict = {"done": False, "status": "starting"}
-    while asyncio.get_event_loop().time() < deadline:
+    while loop.time() < deadline:
         try:
             payload = await client.get_progress(task_id, trace_id=trace_id)
             if isinstance(payload, dict):
@@ -596,7 +614,7 @@ async def step_publishing_to_published(
     ap_client = AutopublishClient(pub_url)
 
     for platform in target_platforms:
-        payload = _per_platform_payload(article, final_pkg, platform, topic_title, config)
+        payload = await _per_platform_payload(article, final_pkg, platform, topic_title, config)
         if payload is None:
             logger.warning("final_package missing entry for platform=%s; skipping", platform)
             continue
@@ -924,13 +942,14 @@ async def sync_topics_from_select_topic(min_score: float = 80) -> list[dict]:
     synced = []
 
     try:
-        # Get existing topic titles for dedup
-        cursor = await conn.execute("SELECT title FROM topic")
-        existing_titles = {row["title"] for row in await cursor.fetchall()}
+        # Get existing normalized titles for dedup (consistent with L1 dedup).
+        cursor = await conn.execute("SELECT title_normalized FROM topic")
+        existing_normalized = {row["title_normalized"] for row in await cursor.fetchall()}
 
         for st in select_topics:
             title = st.get("title", "").strip()
-            if not title or title in existing_titles:
+            title_normalized = crud._normalize_title(title)
+            if not title or title_normalized in existing_normalized:
                 continue
 
             source_url = st.get("source_url", "")
@@ -944,7 +963,6 @@ async def sync_topics_from_select_topic(min_score: float = 80) -> list[dict]:
             tid = crud._uid()
             now = crud._now()
             trace_id = crud._uid()
-            title_normalized = crud._normalize_title(title)
 
             await conn.execute(
                 """INSERT INTO topic (id, title, title_normalized, source, source_url,
@@ -975,7 +993,7 @@ async def sync_topics_from_select_topic(min_score: float = 80) -> list[dict]:
                  trace_id, now),
             )
 
-            existing_titles.add(title)
+            existing_normalized.add(title_normalized)
             synced.append({"topic_id": tid, "article_id": aid, "title": title})
             logger.info("Synced topic from select_topic: %s", title[:50])
 

@@ -57,7 +57,7 @@ TERMINAL_STATES = frozenset({"duplicated", "published", "rejected"})
 TRANSITIONS: dict[str, set[str]] = {
     "collected":  {"matched", "duplicated"},
     "matched":    {"writing", "failed"},
-    "writing":    {"drafted", "failed"},
+    "writing":    {"drafted", "failed", "rejected"},
     "drafted":    {"scored", "failed"},
     "scored":     {"reviewing", "failed"},
     "reviewing":  {"publishing", "rejected", "failed"},
